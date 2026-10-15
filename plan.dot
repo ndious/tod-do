@@ -13,7 +13,7 @@
 	[x] cli: ls masque les taches faites par defaut, -a/--all pour tout montrer
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
 	[x] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
-	[ ] README/SKILL.md + smoke test multi-contextes
+	[x] README/SKILL.md + smoke test multi-contextes
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
 	[x] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
