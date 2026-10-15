@@ -100,7 +100,7 @@ document `plan.dot`, and agent briefs in `md/<uid>.md`.
 
 ```bash
 tod status              # backlog + contexts, with [done total] progress
-tod ls / ls -b          # todos of the current context / of the backlog
+tod ls / ls -b          # todos left to do (-a: the done ones, -A: every context)
 tod brief <id>          # the agent-facing spec markdown of a task
 tod check <id> <n>      # toggle step n of a task's plan
 tod add "text"          # (human) new todo in the current context

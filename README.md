@@ -259,7 +259,8 @@ tod sub 919fe "Next step"  # add a micro todo to a plan
 tod check 919fe 1          # toggle a step
 tod brief 919fe            # the agent-facing brief
 tod status                 # project overview with progress
-tod ls / ls -b             # list current context / backlog
+tod ls / ls -b             # todos left to do (-a: also the done ones)
+tod ls -A                   # every context (same filters)
 tod x 919fe                # mark task complete
 tod rm 919fe / rm -b       # delete (also cleans plan + brief)
 tod mv 919fe / mv -b       # backlog <-> context

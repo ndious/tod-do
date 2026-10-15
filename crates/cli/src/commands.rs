@@ -204,31 +204,86 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
-pub fn ls(backlog: bool) -> Result<()> {
+/// List the todos. Only the tasks left to do are shown, unless
+/// 'all' is set. 'all_contexts' lists the backlog plus every
+/// context instead of the current one.
+pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
+    let visible = |tasks: &[Task]| -> Vec<Task> {
+        tasks
+            .iter()
+            .filter(|t| all || !t.done)
+            .cloned()
+            .collect()
+    };
+
+    let print_list = |tasks: &[Task]| {
+        for task in tasks {
+            let mark = if task.done { "[x]" } else { "[ ]" };
+            println!("{mark} #{}  {}", &task.uid[..5], task.description);
+        }
+    };
+
+    if all_contexts {
+        let backlog_tasks = store.load_backlog()?;
+        let shown = visible(&backlog_tasks);
+        println!("Backlog:");
+        if shown.is_empty() {
+            println!("  (none{})", if backlog_tasks.is_empty() { "" } else { " left to do" });
+        } else {
+            for task in &shown {
+                let created = task.created.format("%Y-%m-%d");
+                let mark = if task.done { "[x]" } else { "[ ]" };
+                println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
+            }
+        }
+        for (name, tasks) in store.contexts()? {
+            let shown = visible(&tasks);
+            println!("{name}:");
+            if shown.is_empty() {
+                if tasks.is_empty() {
+                    println!("  (none)");
+                } else {
+                    println!("  (all done)");
+                }
+            } else {
+                print_list(&shown);
+            }
+        }
+        return Ok(());
+    }
+
     if backlog {
         let tasks = store.load_backlog()?;
-        if tasks.is_empty() {
-            println!("No backlog todos available");
+        let shown = visible(&tasks);
+        if shown.is_empty() {
+            if tasks.is_empty() {
+                println!("No backlog todos available");
+            } else {
+                println!("Backlog: everything is done ('tod ls -b -a' to show them)");
+            }
             return Ok(());
         }
         println!("Backlog:");
-        for task in &tasks {
+        for task in &shown {
             let created = task.created.format("%Y-%m-%d");
-            println!("  #{}  {}  ({})", &task.uid[..5], task.description, created);
+            let mark = if task.done { "[x]" } else { "[ ]" };
+            println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
         }
     } else {
         let branch = store.branch()?;
         let tasks = store.load_context(&branch)?;
-        if tasks.is_empty() {
-            println!("No todos available in context '{branch}'");
+        let shown = visible(&tasks);
+        if shown.is_empty() {
+            if tasks.is_empty() {
+                println!("No todos available in context '{branch}'");
+            } else {
+                println!("No todos left in context '{branch}' — all done ('tod ls -a' to show them)");
+            }
             return Ok(());
         }
-        for task in &tasks {
-            let mark = if task.done { "[x]" } else { "[ ]" };
-            println!("{mark} #{}  {}", &task.uid[..5], task.description);
-        }
+        print_list(&shown);
     }
     Ok(())
 }

@@ -80,9 +80,15 @@ enum Commands {
     Status,
     /// List todos of the current context, or of the backlog (-b)
     Ls {
+        /// Show the completed tasks too
+        #[arg(short, long)]
+        all: bool,
         /// List the backlog instead of the current context
         #[arg(short, long)]
         backlog: bool,
+        /// List every context (and the backlog), not only the current one
+        #[arg(short = 'A', long)]
+        all_contexts: bool,
     },
     /// Mark a task as complete (current context only)
     X {
@@ -138,7 +144,7 @@ fn main() -> Result<()> {
         Commands::Check { identifier, number } => commands::check(&identifier, number),
         Commands::Brief { identifier } => commands::brief(&identifier),
         Commands::Status => commands::status(),
-        Commands::Ls { backlog } => commands::ls(backlog),
+        Commands::Ls { backlog, all, all_contexts } => commands::ls(backlog, all, all_contexts),
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rm { backlog, identifier } => commands::rm(&identifier, backlog),
         Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
