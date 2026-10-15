@@ -12,7 +12,7 @@
 18703f3c388b68953c587bd3841e127cf810dc01:
 	[x] cli: ls masque les taches faites par defaut, -a/--all pour tout montrer
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
-	[ ] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
+	[x] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
 	[ ] README/SKILL.md + smoke test multi-contextes
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
 	[x] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
