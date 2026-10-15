@@ -1,5 +1,5 @@
 0caf0b37b23b15185d5c47f665592dab45ba4561:
-	[ ] git.rs: helpers remotes, fetch, merge --ff-only, push
+	[x] git.rs: helpers remotes, fetch, merge --ff-only, push
 	[ ] store: pull avant chaque commande (avec dedup par instance) et push apres chaque commit
 	[ ] tests: sync deux machines via un bare distant + remote injoignable = warning
 	[ ] README: documenter le comportement de synchronisation
