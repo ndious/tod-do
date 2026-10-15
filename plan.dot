@@ -6,6 +6,7 @@
 	[x] perf: push une seule fois par commande (fin de vie du Store) et seulement si commit reel
 	[x] perf: pull assujetti a un TTL (TOD_SYNC_TTL, defaut 30s, marqueur dans .git)
 	[x] TOD_NO_SYNC kill switch + tests + README + bench avant/apres
+	[ ] git: spawn_push en tache de fond (processus detache + thread reaper) + helper ahead_of
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
 	[x] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
