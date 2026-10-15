@@ -23,6 +23,7 @@
 	[ ] ssh: spawn dans after_routes, key_owner -> entite SeaORM, tests d'auth ssh portes
 	[ ] menage: suppression db.rs rusqlite + argon2 custom, static console servie par loco, Dockerfile
 	[ ] tests: e2e ssh + api portes sous loco, suite verte
+	[ ] README: nouvelle section serveur loco (config, migrations, JWT)
 a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] refactor: les clones du server deviennent des miroirs bare (git clone --mirror), le worktree tod est cree depuis le bare, Store supporte une racine bare
 	[x] sync: git remote update --prune avant chaque usage + relai push miroir vers origin apres un receive
