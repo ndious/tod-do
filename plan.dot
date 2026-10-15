@@ -42,4 +42,4 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] decision consignee: transport = russh + exec git-upload-pack/receive-pack (le binaire git gere le protocole, gitoxide n'a pas de serveur); gitserver-http reserve a un futur transport HTTP
 d121053de1b1fd3df9374ac51f48313add2f9734:
 	[x] cli: CompleteEnv + candidats d'ids dynamiques (x/rm/mv/start/brief/sub/check)
-	[ ] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh
+	[x] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh
