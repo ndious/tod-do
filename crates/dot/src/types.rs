@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 /// The format used by the original lib: "YYYY-MM-DD hh:mm:ss ZZ".
 /// All dot dates are UTC, so the offset is written explicitly.
-pub const ISO8601_FORMAT: &str = "%Y-%m-%d %H:%M:%S +0000";
+pub const ISO8601_FORMAT: &str = "%Y-%m-%d %H:%M:%S %z";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldType {

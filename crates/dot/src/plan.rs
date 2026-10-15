@@ -15,7 +15,7 @@ use std::fs;
 
 use anyhow::{bail, Context, Result};
 
-use crate::schema::{Document, Field, Schema};
+use crate::schema::{Field, Schema};
 use crate::store::Store;
 
 /// Name of the central plan file, inside the .dot directory.
@@ -75,19 +75,32 @@ impl Project {
         Ok(Project { plans })
     }
 
-    /// Save the central plan document.
+    /// Save the central plan document and commit it to the tod
+    /// branch. Keys are task uids and are written verbatim: the
+    /// schema's Title Case key rendering must not touch them, or a
+    /// hex uid starting with a letter would be capitalized in the
+    /// file.
     pub fn save(&self, store: &Store) -> Result<()> {
-        let mut doc = Document::default();
+        let mut out = String::new();
         for (uid, plan) in &self.plans {
             if plan.is_empty() {
                 continue;
             }
-            let lines: Vec<String> =
-                plan.steps.iter().map(|s| stringify_step(s)).collect();
-            doc.set(uid, Field::Block(lines));
+            out.push_str(uid);
+            out.push_str(":\n");
+            for step in &plan.steps {
+                out.push('\t');
+                out.push_str(&stringify_step(step));
+                out.push('\n');
+            }
         }
-        fs::write(store.plan_path(), Schema::new(vec![]).stringify(&doc))
-            .with_context(|| format!("cannot write {}", store.plan_path().display()))?;
+        if out.is_empty() {
+            let _ = fs::remove_file(store.plan_path());
+        } else {
+            fs::write(store.plan_path(), &out)
+                .with_context(|| format!("cannot write {}", store.plan_path().display()))?;
+        }
+        store.commit("tod: update plan")?;
         Ok(())
     }
 

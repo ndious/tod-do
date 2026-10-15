@@ -46,8 +46,7 @@ pub fn markdown(task: &Task, context: &str, plan: &Plan) -> String {
 ");
     if plan.is_empty() {
         md.push_str(&format!(
-            "- [ ] (no step yet — `tod sub {short} "..."`)
-"
+            "- [ ] (no step yet — `tod sub {short} \"...\"`)\n"
         ));
     } else {
         for step in &plan.steps {
@@ -66,6 +65,7 @@ pub fn write_brief(store: &Store, task: &Task, context: &str, plan: &Plan) -> Re
     let path = dir.join(format!("{}.md", task.uid));
     fs::write(&path, markdown(task, context, plan))
         .with_context(|| format!("cannot write {}", path.display()))?;
+    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
     Ok(path)
 }
 

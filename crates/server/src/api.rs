@@ -1,7 +1,7 @@
 //! The JSON API of tod-server: login, repository registry, and the
 //! per-repository task endpoints, all built on the dot crate.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path as AxumPath, State};
@@ -59,7 +59,7 @@ pub struct Status {
 }
 
 fn task_view(task: &Task, context: &str, project: &Project) -> TaskView {
-    let plan = project
+    let plan: Vec<StepView> = project
         .plan(&task.uid)
         .map(|p| {
             p.steps
@@ -98,19 +98,28 @@ fn unauthorized() -> ApiError {
 
 /// Extract and validate the bearer token.
 fn auth(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
+    auth_user(state, headers).map(|_| ())
+}
+
+/// Extract and validate the bearer token, returning its user.
+fn auth_user(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(unauthorized)?;
-    state.db.check_session(token).map_err(|_| unauthorized())
+    state.db.session_user(token).map_err(|_| unauthorized())
 }
 
 /// Resolve the store of a registered repository (clone / pull first).
+/// The final push runs in the background: a request handler must
+/// not block on a slow network round trip.
 fn open_store(state: &AppState, id: i64) -> Result<Store, ApiError> {
     let repo = state.db.get_repo(id).map_err(err)?;
     let root = repos::prepare(&repo, &state.workdir).map_err(err)?;
-    Ok(Store::new(root))
+    let store = Store::new(root);
+    store.set_async_push(true);
+    Ok(store)
 }
 
 fn refresh_brief(store: &Store, task: &Task, context: &str) -> anyhow::Result<()> {
@@ -177,6 +186,63 @@ async fn delete_repo(
     auth(&state, &headers)?;
     state.db.delete_repo(id).map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------- ssh keys ----------
+
+#[derive(Debug, serde::Serialize)]
+pub struct KeyView {
+    pub id: i64,
+    pub public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddKeyBody {
+    public_key: String,
+}
+
+async fn add_key(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(body): Json<AddKeyBody>,
+) -> Result<Json<KeyView>, ApiError> {
+    let username = auth_user(&state, &headers)?;
+    // parse + canonicalize: the stored form has no comment, so the
+    // SSH server can compare key texts with the wire form
+    let key = russh::keys::ssh_key::PublicKey::from_openssh(body.public_key.trim())
+        .map_err(|_| bad_request("invalid public key"))?;
+    let normalized = crate::ssh::canonical_key(&key)
+        .map_err(|_| bad_request("invalid public key"))?;
+    let id = state.db.add_key(&username, &normalized).map_err(err)?;
+    Ok(Json(KeyView { id, public_key: normalized }))
+}
+
+async fn list_keys(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<KeyView>>, ApiError> {
+    let username = auth_user(&state, &headers)?;
+    let keys = state
+        .db
+        .list_keys(&username)
+        .map_err(err)?
+        .into_iter()
+        .map(|(id, public_key)| KeyView { id, public_key })
+        .collect();
+    Ok(Json(keys))
+}
+
+async fn delete_key(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<StatusCode, ApiError> {
+    let username = auth_user(&state, &headers)?;
+    if state.db.delete_key(&username, id).map_err(err)? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err((StatusCode::NOT_FOUND, "no such key".to_string()))
+    }
 }
 
 // ---------- tasks (scoped by repository) ----------
@@ -288,5 +354,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/api/repos/:id/task", post(add_task))
         .route("/api/repos/:id/sub", post(add_sub))
         .route("/api/repos/:id/check", post(check_step))
+        .route("/api/keys", get(list_keys).post(add_key))
+        .route("/api/keys/:id", axum::routing::delete(delete_key))
         .with_state(state)
 }

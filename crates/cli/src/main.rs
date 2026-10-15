@@ -105,6 +105,14 @@ enum Commands {
         /// Full or partial task identifier
         identifier: String,
     },
+    /// Start a task: create a working branch for it and move it there
+    Start {
+        /// Full or partial task identifier
+        identifier: String,
+        /// Branch name (default: derived from the task description)
+        #[arg(short, long, value_name = "NAME")]
+        branch: Option<String>,
+    },
     /// List contexts (branches) that still hold todos
     Ctx,
     /// Close a context: delete all its todos
@@ -134,6 +142,7 @@ fn main() -> Result<()> {
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rm { backlog, identifier } => commands::rm(&identifier, backlog),
         Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
+        Commands::Start { identifier, branch } => commands::start(&identifier, branch),
         Commands::Ctx => commands::ctx(),
         Commands::Resolve { context } => commands::resolve(&context),
         Commands::Export { output } => commands::export(&output),

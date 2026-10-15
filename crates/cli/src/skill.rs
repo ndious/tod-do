@@ -14,6 +14,8 @@ pub enum Agent {
     Claude,
     /// Cursor
     Cursor,
+    /// Mistral Vibe
+    Vibe,
     /// Any other agent following the .agents convention
     Generic,
 }
@@ -24,6 +26,7 @@ impl Agent {
         match self {
             Agent::Claude => ".claude/skills/tod",
             Agent::Cursor => ".cursor/skills/tod",
+            Agent::Vibe => ".vibe/skills/tod",
             Agent::Generic => ".agents/skills/tod",
         }
     }
@@ -32,6 +35,7 @@ impl Agent {
         match self {
             Agent::Claude => "Claude Code",
             Agent::Cursor => "Cursor",
+            Agent::Vibe => "Mistral Vibe",
             Agent::Generic => "other (.agents)",
         }
     }
@@ -41,6 +45,7 @@ impl Agent {
         match value.trim().to_lowercase().as_str() {
             "claude" | "claude-code" => Some(Agent::Claude),
             "cursor" => Some(Agent::Cursor),
+            "vibe" | "mistral" => Some(Agent::Vibe),
             "agents" | "generic" | "other" => Some(Agent::Generic),
             _ => None,
         }
@@ -59,9 +64,10 @@ description: Manage the todos, plans and briefs of this repository with the tod 
 
 # tod — git-native todo & planning for this repository
 
-This repository tracks its work with **tod**: one plain-text file per
-task in `.tod/`, a central plan document `.tod/plan.dot`, and agent
-briefs in `.tod/md/<uid>.md`.
+This repository tracks its work with **tod**: tasks live in a
+dedicated `tod` git branch (checked out in a hidden worktree, never
+in your working copy) — one plain-text file per task, a central plan
+document `plan.dot`, and agent briefs in `md/<uid>.md`.
 
 ## Concepts
 
@@ -86,7 +92,7 @@ briefs in `.tod/md/<uid>.md`.
    shown by status). Only check steps you actually completed.
 5. **When a step reveals new work**, propose it to the human; the
    human adds it with `tod sub <id> "text"`. Never rewrite
-   `.tod/plan.dot` by hand.
+   `plan.dot` by hand.
 6. **When the whole task is done**, ask the human to run
    `tod x <id>`; do not complete a task on your own.
 
@@ -101,20 +107,23 @@ tod add "text"          # (human) new todo in the current context
 tod plan "text"         # (human) new task with a plan + brief
 tod sub <id> "text"     # (human) add a step to a plan
 tod x <id>              # (human) mark a task complete
-tod rm / mv / ctx / resolve / export   # (human) maintenance
+tod rm / mv / start / ctx / resolve / export   # (human) maintenance
 ```
 
 ## Storage (read-only for agents)
 
+The todos live in the `tod` git branch, checked out in a private
+worktree inside `.git/` — never in your working copy.
+
 ```
-.tod/plan.dot              # every plan, one document — do not hand-edit
-.tod/md/<sha1>.md          # generated briefs — do not hand-edit
-.tod/todo/<branch>/<sha1> # task files (format dot) — do not hand-edit
-.tod/backlog/<sha1>        # backlog tasks — do not hand-edit
+todo/<branch>/<sha1>      # task files (format dot) — do not hand-edit
+backlog/<sha1>            # backlog tasks — do not hand-edit
+plan.dot                  # every plan, one document — do not hand-edit
+md/<sha1>.md              # generated briefs — do not hand-edit
 ```
 
 Agents interact with tod **only through the CLI**. The files above
-are the human's storage; the briefs in `.tod/md/` are generated.
+are the human's storage; the briefs in `md/` are generated.
 
 ## Rules
 
@@ -150,7 +159,7 @@ pub fn remove(store: &Store, agent: Agent) -> Result<bool> {
 /// Remove every installed skill (all agents). Returns how many were removed.
 pub fn remove_all(store: &Store) -> Result<usize> {
     let mut removed = 0;
-    for agent in [Agent::Claude, Agent::Cursor, Agent::Generic] {
+    for agent in [Agent::Claude, Agent::Cursor, Agent::Vibe, Agent::Generic] {
         if remove(store, agent)? {
             removed += 1;
         }
@@ -179,17 +188,18 @@ mod tests {
     fn each_agent_gets_its_own_folder() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
-        for agent in [Agent::Claude, Agent::Cursor, Agent::Generic] {
+        for agent in [Agent::Claude, Agent::Cursor, Agent::Vibe, Agent::Generic] {
             let path = install(&store, agent).unwrap();
             assert!(path.to_string_lossy().starts_with(dir.path().to_string_lossy().as_ref()));
             assert!(path.ends_with("tod/SKILL.md"));
             assert!(path.to_string_lossy().contains(match agent {
                 Agent::Claude => ".claude",
                 Agent::Cursor => ".cursor",
+                Agent::Vibe => ".vibe",
                 Agent::Generic => ".agents",
             }));
         }
-        assert_eq!(remove_all(&store).unwrap(), 3);
+        assert_eq!(remove_all(&store).unwrap(), 4);
     }
 
     #[test]

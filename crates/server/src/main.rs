@@ -11,6 +11,7 @@ use clap::Parser;
 mod api;
 mod db;
 mod repos;
+mod ssh;
 
 #[derive(Parser, Debug)]
 #[command(name = "tod-server", about = "Multi-repo project management server for .tod repositories")]
@@ -30,6 +31,10 @@ struct Args {
     /// Directory holding the built web console (crates/web/dist)
     #[arg(long, default_value = "dist")]
     static_dir: PathBuf,
+
+    /// Port of the embedded git-over-SSH server
+    #[arg(long, default_value_t = 2222)]
+    ssh_port: u16,
 }
 
 #[tokio::main]
@@ -43,6 +48,21 @@ async fn main() -> Result<()> {
         db: database,
         workdir: args.workdir.clone(),
     });
+
+    // git over SSH: bind now so a busy port fails loudly at startup
+    let ssh_listener = tokio::net::TcpListener::bind(("0.0.0.0", args.ssh_port))
+        .await
+        .with_context(|| format!("cannot bind ssh port {}", args.ssh_port))?;
+    let ssh_port = ssh_listener.local_addr()?.port();
+    {
+        let state = state.clone();
+        let ssh_config = ssh::config(&args.workdir)?;
+        tokio::spawn(async move {
+            if let Err(e) = ssh::serve_on(state, ssh_config, ssh_listener).await {
+                eprintln!("ssh server error: {e}");
+            }
+        });
+    }
 
     let router = api::router(state).fallback_service(
         tower_http::services::ServeDir::new(&args.static_dir),
@@ -58,6 +78,7 @@ async fn main() -> Result<()> {
         args.workdir.display(),
         args.static_dir.display()
     );
+    println!("git over ssh on port {ssh_port}: git clone ssh://git@localhost:{ssh_port}/<repo>.git");
     axum::serve(listener, router).await?;
     Ok(())
 }

@@ -22,7 +22,7 @@ fn setup() -> (tempfile::TempDir, Store) {
 
 #[test]
 fn add_task_to_current_context() {
-    let (dir, store) = setup();
+    let (_dir, store) = setup();
     let branch = store.branch().unwrap();
 
     let task = store.add("write the tests", "tester", false).unwrap();
@@ -58,6 +58,12 @@ fn complete_task_with_partial_identifier() {
     let (_dir, store) = setup();
     let branch = store.branch().unwrap();
     let task = store.add("finish the port", "tester", false).unwrap();
+
+    // The dot format stores timestamps with second precision, so
+    // backdate 'created' to make the 'updated' refresh observable.
+    let mut stored = store.load_context(&branch).unwrap()[0].clone();
+    stored.created = chrono::Utc::now() - chrono::Duration::hours(1);
+    dot::store::write_task(&store.context_dir(&branch), &stored).unwrap();
 
     let done = store.complete(&task.uid[..5]).unwrap();
     assert!(done.done);
@@ -178,7 +184,8 @@ fn invalid_task_files_are_skipped_not_fatal() {
 #[test]
 fn operations_require_init() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::new(dir.path()); // no git init, no dot init
+    let store = Store::new(dir.path()); // no git init, no tod init
     assert!(store.add("task", "tester", false).is_err());
-    assert!(store.load_backlog().unwrap().is_empty());
+    assert!(store.load_backlog().is_err());
+    assert!(!store.is_initialized());
 }

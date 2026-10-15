@@ -105,7 +105,11 @@ fn parse_raw(content: &str) -> Vec<(String, RawValue)> {
                     RawValue::Block(lines) => lines.push(rest.to_string()),
                     RawValue::Line(text) => {
                         let first = std::mem::take(text);
-                        entry.1 = RawValue::Block(vec![first, rest.to_string()]);
+                        if first.is_empty() {
+                            entry.1 = RawValue::Block(vec![rest.to_string()]);
+                        } else {
+                            entry.1 = RawValue::Block(vec![first, rest.to_string()]);
+                        }
                     }
                 }
             }

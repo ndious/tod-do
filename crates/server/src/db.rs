@@ -42,6 +42,12 @@ impl Db {
                  name TEXT UNIQUE NOT NULL,
                  url TEXT NOT NULL,
                  created_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS user_keys (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 user_id INTEGER NOT NULL REFERENCES users(id),
+                 public_key TEXT NOT NULL,
+                 created_at TEXT NOT NULL
              );",
         )?;
         Ok(Db { conn: Mutex::new(conn) })
@@ -118,13 +124,74 @@ impl Db {
         Ok(token)
     }
 
-    /// Check a bearer token. Ok(()) when the session is valid.
-    pub fn check_session(&self, token: &str) -> Result<()> {
+    /// The username behind a session token.
+    pub fn session_user(&self, token: &str) -> Result<String> {
         self.conn
             .lock()
             .unwrap()
-            .query_row("SELECT 1 FROM sessions WHERE token = ?1", rusqlite::params![token], |_| Ok(()))
+            .query_row(
+                "SELECT u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?1",
+                rusqlite::params![token],
+                |r| r.get(0),
+            )
             .map_err(|_| anyhow::anyhow!("invalid or expired session"))
+    }
+
+    /// Register an SSH public key (openssh format) for a user.
+    pub fn add_key(&self, username: &str, public_key: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let user_id: i64 = conn
+            .query_row(
+                "SELECT id FROM users WHERE username = ?1",
+                rusqlite::params![username],
+                |r| r.get(0),
+            )
+            .map_err(|_| anyhow::anyhow!("unknown user '{username}'"))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO user_keys (user_id, public_key, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![user_id, public_key, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// The SSH keys of a user: (id, openssh public key).
+    pub fn list_keys(&self, username: &str) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT k.id, k.public_key FROM user_keys k JOIN users u ON u.id = k.user_id
+             WHERE u.username = ?1 ORDER BY k.id",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![username], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Delete one of the user's own keys. Unknown or foreign keys
+    /// are simply not deleted.
+    pub fn delete_key(&self, username: &str, id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "DELETE FROM user_keys WHERE id = ?1 AND user_id IN
+             (SELECT id FROM users WHERE username = ?2)",
+            rusqlite::params![id, username],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Who owns a given SSH public key (openssh format)?
+    pub fn key_owner(&self, public_key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT u.username FROM user_keys k JOIN users u ON u.id = k.user_id
+             WHERE k.public_key = ?1",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![public_key])?;
+        Ok(match rows.next()? {
+            Some(row) => Some(row.get(0)?),
+            None => None,
+        })
     }
 
     pub fn list_repos(&self) -> Result<Vec<Repo>> {
@@ -160,6 +227,17 @@ impl Db {
         .map_err(|_| anyhow::anyhow!("unknown repository #{id}"))
     }
 
+    /// A repository by its (unique) name — how the SSH clients name
+    /// them: git@host:<name>.git.
+    pub fn find_repo_by_name(&self, name: &str) -> Result<Option<Repo>> {
+        Ok(self.conn.lock().unwrap().query_row(
+            "SELECT id, name, url FROM repos WHERE name = ?1",
+            rusqlite::params![name],
+            |r| Ok(Repo { id: r.get(0)?, name: r.get(1)?, url: r.get(2)? }),
+        )
+        .ok())
+    }
+
     pub fn delete_repo(&self, id: i64) -> Result<()> {
         let n = self.conn.lock().unwrap().execute("DELETE FROM repos WHERE id = ?1", rusqlite::params![id])?;
         if n == 0 {
@@ -170,9 +248,9 @@ impl Db {
 }
 
 fn new_token() -> String {
-    use rand::RngCore;
+    use argon2::password_hash::rand_core::RngCore;
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    OsRng.fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -187,14 +265,35 @@ mod tests {
     }
 
     #[test]
+    fn ssh_keys_belong_to_their_owner() {
+        let (_d, db) = db();
+        db.create_user("alice", "pw123").unwrap();
+        db.create_user("bob", "pw123").unwrap();
+
+        let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake alice@laptop";
+        let id = db.add_key("alice", key).unwrap();
+        assert_eq!(db.list_keys("alice").unwrap().len(), 1);
+        assert!(db.list_keys("bob").unwrap().is_empty());
+        assert_eq!(db.key_owner(key).unwrap().as_deref(), Some("alice"));
+        assert!(db.key_owner("ssh-ed25519 AAAAunknown").unwrap().is_none());
+
+        // a user cannot delete someone else's key
+        assert!(!db.delete_key("bob", id).unwrap());
+        assert_eq!(db.list_keys("alice").unwrap().len(), 1);
+        assert!(db.delete_key("alice", id).unwrap());
+        assert!(db.list_keys("alice").unwrap().is_empty());
+        assert!(db.key_owner(key).unwrap().is_none());
+    }
+
+    #[test]
     fn user_login_and_session_round_trip() {
         let (_d, db) = db();
         db.create_user("nicolas", "secret").unwrap();
         assert!(db.login("nicolas", "wrong").is_err());
         assert!(db.login("nobody", "secret").is_err());
         let token = db.login("nicolas", "secret").unwrap();
-        assert!(db.check_session(&token).is_ok());
-        assert!(db.check_session("nope").is_err());
+        assert_eq!(db.session_user(&token).unwrap(), "nicolas");
+        assert!(db.session_user("nope").is_err());
     }
 
     #[test]

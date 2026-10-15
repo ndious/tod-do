@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{IsTerminal, Write};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use dot::brief;
 use dot::git;
@@ -12,7 +12,12 @@ use dot::task::Task;
 pub fn init(skill: bool, no_skill: bool, agent: Option<String>) -> Result<()> {
     let store = Store::discover()?;
     store.init()?;
-    println!("Initialized tod in {}", store.dot_dir().display());
+    println!(
+        "Initialized tod: branch '{}' checked out in {}",
+        dot::store::TOD_BRANCH,
+        store.tod_dir().display()
+    );
+    println!("Your todos are versioned. Share them with: git push origin {}", dot::store::TOD_BRANCH);
 
     // --agent <name>: install directly. --skill: install, asking
     // which agent when interactive, generic otherwise. --no-skill:
@@ -54,14 +59,16 @@ fn choose_agent_interactive() -> Result<crate::skill::Agent> {
     println!("\nWhich agent do you use?");
     println!("  1) Claude Code    (.claude/skills/tod/)");
     println!("  2) Cursor         (.cursor/skills/tod/)");
-    println!("  3) other / standard (.agents/skills/tod/)");
-    print!("Choose [1-3, default 3]: ");
+    println!("  3) Mistral Vibe   (.vibe/skills/tod/)");
+    println!("  4) other / standard (.agents/skills/tod/)");
+    print!("Choose [1-4, default 4]: ");
     std::io::stdout().flush()?;
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
     Ok(match answer.trim() {
         "1" => crate::skill::Agent::Claude,
         "2" => crate::skill::Agent::Cursor,
+        "3" => crate::skill::Agent::Vibe,
         _ => crate::skill::Agent::Generic,
     })
 }
@@ -236,7 +243,7 @@ pub fn done(identifier: &str) -> Result<()> {
 pub fn rm(identifier: &str, backlog: bool) -> Result<()> {
     let store = Store::discover()?;
     let task = store.remove(identifier, backlog)?;
-    forget_task(&store, &[task.uid])?;
+    forget_task(&store, &[task.uid.clone()])?;
     println!("Deleted #{} {}", &task.uid[..5], task.description);
     Ok(())
 }
@@ -250,6 +257,38 @@ pub fn mv(identifier: &str, to_backlog: bool) -> Result<()> {
         format!("context '{}'", store.branch()?)
     };
     println!("Moved #{} {} to {destination}", &task.uid[..5], task.description);
+    Ok(())
+}
+
+/// Start a task: create a working branch named after it, switch to
+/// it, and make the task belong to that branch.
+pub fn start(identifier: &str, branch: Option<String>) -> Result<()> {
+    let store = Store::discover()?;
+    start_in(&store, identifier, branch)
+}
+
+fn start_in(store: &Store, identifier: &str, branch: Option<String>) -> Result<()> {
+    store.ensure_init()?;
+    let (_context, task) = store.find_task(identifier)?;
+
+    let branch = match branch {
+        Some(name) => name,
+        None => {
+            let slug = git::branch_slug(&task.description);
+            if slug.is_empty() {
+                format!("tod-{}", &task.uid[..7])
+            } else {
+                slug
+            }
+        }
+    };
+    git::create_branch(store.root(), &branch)?;
+    store.move_task_to(identifier, &branch)?;
+
+    println!(
+        "Started #{} {} on branch '{branch}'",
+        &task.uid[..5], task.description
+    );
     Ok(())
 }
 
@@ -309,4 +348,63 @@ fn refresh_brief(store: &Store, task: &Task, context: &str, project: &Project) -
         brief::write_brief(store, task, context, &plan)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    /// A temp directory with a real git repository and a store on it.
+    fn git_repo() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let out = Command::new("git").arg("init").current_dir(dir.path()).output().unwrap();
+        assert!(out.status.success(), "git init failed");
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn start_creates_a_branch_and_moves_the_task_into_it() {
+        let (dir, store) = git_repo();
+        let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
+
+        // the branch name comes from the task description
+        start_in(&store, &task.uid[..7], None).unwrap();
+        assert_eq!(
+            git::current_branch_in(dir.path()).unwrap(),
+            "fix-the-login-bug"
+        );
+        assert!(store.load_backlog().unwrap().is_empty());
+        assert_eq!(store.load_context("fix-the-login-bug").unwrap().len(), 1);
+
+        // an explicit branch name overrides the slug
+        let task2 = store.add_in(None, "Another one", "tester").unwrap();
+        start_in(&store, &task2.uid[..7], Some("custom".into())).unwrap();
+        assert_eq!(git::current_branch_in(dir.path()).unwrap(), "custom");
+        assert_eq!(store.load_context("custom").unwrap().len(), 1);
+
+        // a useless description falls back to the uid prefix
+        let task3 = store.add_in(None, "###", "tester").unwrap();
+        start_in(&store, &task3.uid[..7], None).unwrap();
+        assert_eq!(
+            git::current_branch_in(dir.path()).unwrap(),
+            format!("tod-{}", &task3.uid[..7])
+        );
+    }
+
+    #[test]
+    fn start_fails_when_the_branch_already_exists() {
+        let (dir, store) = git_repo();
+        let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
+        start_in(&store, &task.uid[..7], None).unwrap();
+
+        let task2 = store.add_in(None, "Fix the login bug again", "tester").unwrap();
+        // 'fix-the-login-bug-again' is free, but an existing name must fail
+        assert!(start_in(&store, &task2.uid[..7], Some("fix-the-login-bug".into())).is_err());
+        // nothing moved: the second task is still in the backlog
+        assert_eq!(store.load_backlog().unwrap().len(), 1);
+        assert_eq!(git::current_branch_in(dir.path()).unwrap(), "fix-the-login-bug");
+    }
 }

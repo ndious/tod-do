@@ -13,3 +13,6 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 dot = { path = "../dot" }
+
+[dev-dependencies]
+tempfile.workspace = true
