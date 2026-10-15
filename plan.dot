@@ -23,4 +23,4 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[ ] receive-pack: push accepte sur toute branche, post-receive rafraichit le worktree tod si la branche tod bouge
 	[ ] tests e2e: server reel sur port ssh ephemere, clone/fetch/push via le CLI git avec cle, refus sans cle, branche tod coherente
 	[ ] README + Dockerfile: doc (git remote add, gestion des cles), exposition du port ssh
-	[ ] recherche/POC: crate candidate pour le serveur git (gitoxide, russh, libgit2, alternatives) + decision argumentee transport/exec
+	[x] recherche/POC: crate candidate pour le serveur git (gitoxide, russh, libgit2, alternatives) + decision argumentee transport/exec
