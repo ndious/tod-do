@@ -17,3 +17,4 @@
 a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[ ] refactor: les clones du server deviennent des miroirs bare (git clone --mirror), le worktree tod est cree depuis le bare, Store supporte une racine bare
 	[ ] sync: git remote update --prune avant chaque usage + relai push miroir vers origin apres un receive
+	[ ] scaffold SSH: etude/valider russh (ou alternative) comme serveur SSH embarque, --ssh-port (defaut 2222), cle hote auto-generee stockee dans le workdir
