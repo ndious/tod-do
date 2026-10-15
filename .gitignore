@@ -1,2 +1,5 @@
 /target
 .tod/
+
+*.sqlite
+.tod-server*

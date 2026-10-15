@@ -1,0 +1,145 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: #111318;
+  color: #e6e6e6;
+}
+
+main {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 4rem;
+}
+
+h1 { margin: 0; font-size: 1.6rem; }
+h2 {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa3b2;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.meta { color: #9aa3b2; margin: 0.2rem 0 1rem; font-size: 0.85rem; }
+
+form.login {
+  max-width: 320px;
+  margin: 3rem auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  input {
+    background: #1b1f27;
+    color: inherit;
+    border: 1px solid #333a47;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.95rem;
+  }
+  button {
+    background: #4f7cff;
+    border: 0;
+    color: white;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  .error { color: #ff6b6b; font-size: 0.85rem; }
+}
+
+div.bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+
+  select, input[type="text"] {
+    background: #1b1f27;
+    color: inherit;
+    border: 1px solid #333a47;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+  }
+  button {
+    background: #2b3240;
+    color: inherit;
+    border: 0;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+  }
+}
+
+form.add {
+  display: flex;
+  gap: 0.5rem;
+
+  input[type="text"], select {
+    background: #1b1f27;
+    color: inherit;
+    border: 1px solid #333a47;
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.95rem;
+  }
+  input[type="text"] { flex: 1; }
+  button {
+    background: #4f7cff;
+    border: 0;
+    color: white;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+}
+
+ul { list-style: none; padding: 0; }
+
+li.task {
+  background: #1b1f27;
+  border: 1px solid #2b3240;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.task .desc { font-weight: 600; }
+.task.done .desc { text-decoration: line-through; color: #9aa3b2; }
+.task .uid {
+  color: #6f7b8d;
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+  font-family: ui-monospace, monospace;
+}
+.task .progress { color: #4f7cff; font-size: 0.75rem; margin-left: 0.5rem; }
+
+ol.plan { padding-left: 1.2rem; margin: 0.5rem 0 0.5rem; }
+ol.plan li.step { cursor: pointer; padding: 0.15rem 0; list-style: none; }
+ol.plan li.step.done { color: #9aa3b2; text-decoration: line-through; }
+ol.plan li.step:hover { color: #4f7cff; }
+
+form.sub { display: flex; gap: 0.4rem; }
+form.sub input {
+  flex: 1;
+  background: #141821;
+  color: inherit;
+  border: 1px solid #2b3240;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+}
+form.sub button {
+  background: #2b3240;
+  color: inherit;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}

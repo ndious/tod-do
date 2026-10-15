@@ -9,5 +9,7 @@ license.workspace = true
 gloo-net.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+wasm-bindgen = "0.2"
 wasm-bindgen-futures.workspace = true
+web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement"] }
 yew.workspace = true

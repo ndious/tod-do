@@ -1,30 +1,29 @@
 //! The embedded SSH server: git access (fetch and push) for the
-//! managed repositories, authenticated by user SSH keys registered
-//! through the HTTP API.
+//! managed repositories, authenticated by the user SSH keys
+//! registered through the HTTP API.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use sea_orm::DatabaseConnection;
 use russh::keys::ssh_key;
 use russh::keys::{Algorithm, PrivateKey};
 use russh::server::{Auth, Config, Handler, Server as _};
 
-use crate::api::SharedState;
+use crate::models::{repos, user_keys};
+
+/// What the SSH server needs: the database (key and repository
+/// lookups) and the mirrors' workdir.
+#[derive(Clone)]
+pub struct SshState {
+    pub db: DatabaseConnection,
+    pub workdir: PathBuf,
+}
 
 /// The SSH host key lives in the server workdir.
 fn host_key_path(workdir: &Path) -> PathBuf {
     workdir.join("ssh_host_key")
-}
-
-/// The canonical text of a public key: openssh format without the
-/// comment, so that a registered key ("ssh-ed25519 AAAA… user@laptop")
-/// and the key presented during authentication (no comment on the
-/// wire) compare equal.
-pub fn canonical_key(key: &ssh_key::PublicKey) -> Result<String> {
-    let mut key = key.clone();
-    key.set_comment("");
-    Ok(key.to_openssh()?)
 }
 
 /// Load the SSH host key, generating it on first start. The key is
@@ -54,6 +53,7 @@ pub fn config(workdir: &Path) -> Result<Arc<Config>> {
     Ok(Arc::new(Config {
         keys: vec![host_key(workdir)?],
         inactivity_timeout: Some(std::time::Duration::from_secs(600)),
+        auth_rejection_time: std::time::Duration::from_secs(3),
         ..Default::default()
     }))
 }
@@ -61,7 +61,7 @@ pub fn config(workdir: &Path) -> Result<Arc<Config>> {
 /// Serve git over SSH on an already-bound listener, so the caller
 /// controls the port (and reports bind failures) itself.
 pub async fn serve_on(
-    state: SharedState,
+    state: SshState,
     config: Arc<Config>,
     socket: tokio::net::TcpListener,
 ) -> std::io::Result<()> {
@@ -71,22 +71,7 @@ pub async fn serve_on(
 
 /// The SSH server: one session handler per connection.
 struct SshServer {
-    state: SharedState,
-}
-
-/// One SSH connection. Authentication is by registered public key
-/// only — the key itself identifies the user, the requested login
-/// name is ignored (the git convention, like GitHub: git@...).
-/// After authentication, the only allowed command is the git
-/// protocol: git-upload-pack (fetch) or git-receive-pack (push).
-struct SshSession {
-    state: SharedState,
-    /// The owner of the accepted key, once authenticated.
-    user: Option<String>,
-    /// The channel of the running command.
-    channel: Option<russh::Channel<russh::server::Msg>>,
-    /// stdin of the git subprocess (client -> git).
-    child_stdin: Option<tokio::process::ChildStdin>,
+    state: SshState,
 }
 
 impl russh::server::Server for SshServer {
@@ -100,6 +85,21 @@ impl russh::server::Server for SshServer {
             child_stdin: None,
         }
     }
+}
+
+/// One SSH connection. Authentication is by registered public key
+/// only — the key itself identifies the user, the requested login
+/// name is ignored (the git convention, like GitHub: git@...).
+/// After authentication, the only allowed command is the git
+/// protocol: git-upload-pack (fetch) or git-receive-pack (push).
+struct SshSession {
+    state: SshState,
+    /// The owner of the accepted key, once authenticated.
+    user: Option<String>,
+    /// The channel of the running command.
+    channel: Option<russh::Channel<russh::server::Msg>>,
+    /// stdin of the git subprocess (client -> git).
+    child_stdin: Option<tokio::process::ChildStdin>,
 }
 
 /// Parse the command git asks us to run. Strictly limited to the
@@ -129,10 +129,10 @@ impl Handler for SshSession {
         _user: &str,
         key: &ssh_key::PublicKey,
     ) -> Result<Auth, Self::Error> {
-        let Ok(text) = canonical_key(key) else {
+        let Ok(text) = user_keys::canonical_key(key) else {
             return Ok(Auth::reject());
         };
-        match self.state.db.key_owner(&text) {
+        match user_keys::key_owner(&self.state.db, &text).await {
             Ok(Some(owner)) => {
                 self.user = Some(owner);
                 Ok(Auth::Accept)
@@ -179,17 +179,18 @@ impl Handler for SshSession {
         };
 
         // resolve the repository and its mirror
-        let mirror = match self
-            .state
-            .db
-            .find_repo_by_name(repo_name)
-            .and_then(|repo| match repo {
-                Some(repo) => crate::repos::prepare(&repo, &self.state.workdir),
-                None => Err(anyhow::anyhow!("no repository named '{repo_name}'")),
-            }) {
-            Ok(mirror) => mirror,
+        let mirror = match repos::find_by_name(&self.state.db, repo_name).await {
+            Ok(repo) => match crate::repos::prepare(&repo, &self.state.workdir) {
+                Ok(mirror) => mirror,
+                Err(e) => {
+                    eprintln!("ssh: {user}: {e:#}");
+                    let _ = channel.exit_status(127).await;
+                    let _ = channel.close().await;
+                    return Ok(());
+                }
+            },
             Err(e) => {
-                eprintln!("ssh: {user}: {e:#}");
+                eprintln!("ssh: {user}: no repository '{repo_name}' ({e})");
                 let _ = channel.exit_status(127).await;
                 let _ = channel.close().await;
                 return Ok(());
@@ -221,10 +222,10 @@ impl Handler for SshSession {
         let mut stderr = child.stderr.take().unwrap();
         let mut stdout_writer = channel.make_writer();
         let mut stderr_writer = channel.make_writer_ext(Some(1));
-        tokio::spawn(async move {
+        let stdout_copy = tokio::spawn(async move {
             let _ = tokio::io::copy(&mut stdout, &mut stdout_writer).await;
         });
-        tokio::spawn(async move {
+        let stderr_copy = tokio::spawn(async move {
             let _ = tokio::io::copy(&mut stderr, &mut stderr_writer).await;
         });
 
@@ -235,6 +236,11 @@ impl Handler for SshSession {
                 Ok(status) => status.code().unwrap_or(1),
                 Err(_) => 1,
             };
+            // the copies may still hold buffered output: deliver
+            // everything before closing, or the client sees a
+            // truncated pack
+            let _ = stdout_copy.await;
+            let _ = stderr_copy.await;
             let _ = channel.exit_status(code as u32).await;
             let _ = channel.close().await;
             if is_receive && code == 0 {
@@ -274,15 +280,20 @@ impl Handler for SshSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::AppState;
-    use crate::db::Db;
-    use tokio::io::AsyncReadExt;
+    use loco_rs::prelude::*;
 
-    fn state(dir: &Path) -> SharedState {
-        Arc::new(AppState {
-            db: Db::open(&dir.join("test.db")).unwrap(),
-            workdir: dir.join("workdir"),
-        })
+    /// A test state with a real sqlite database in memory.
+    async fn test_state() -> (tempfile::TempDir, SshState) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+        // apply the migrations to the in-memory database
+        use sea_orm_migration::MigratorTrait;
+        migration::Migrator::up(&db, None).await.unwrap();
+        let state = SshState {
+            db,
+            workdir: dir.path().join("workdir"),
+        };
+        (dir, state)
     }
 
     #[test]
@@ -296,21 +307,6 @@ mod tests {
         assert_eq!(first.public_key(), second.public_key());
     }
 
-    #[tokio::test]
-    async fn server_presents_the_ssh_banner() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = state(dir.path());
-        let config = config(&state.workdir).unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(serve_on(state, config, listener));
-
-        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        let mut banner = [0u8; 32];
-        let n = stream.read(&mut banner).await.unwrap();
-        assert!(banner[..n].starts_with(b"SSH-2.0"));
-    }
-
     /// A minimal russh client that accepts any host key.
     struct NoVerify;
 
@@ -320,7 +316,7 @@ mod tests {
         async fn check_server_key(
             &mut self,
             _key: &russh::keys::PublicKeyOrCertificate,
-        ) -> Result<bool, Self::Error> {
+        ) -> std::result::Result<bool, Self::Error> {
             Ok(true)
         }
     }
@@ -349,14 +345,21 @@ mod tests {
 
     #[tokio::test]
     async fn registered_keys_authenticate_and_others_are_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = state(dir.path());
-        state.db.create_user("alice", "pass").unwrap();
+        let (dir, state) = test_state().await;
+        // create a user through loco's model layer
+        let params = crate::models::users::RegisterParams {
+            email: "alice@tod.local".into(),
+            password: "pass123".into(),
+            name: "Alice".into(),
+        };
+        let user = crate::models::users::Model::create_with_password(&state.db, &params)
+            .await
+            .unwrap();
 
-        // alice registers her key through the API path (db)
+        // alice registers her key
         let alice_key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
-        let public = alice_key.public_key().to_openssh().unwrap();
-        state.db.add_key("alice", &public).unwrap();
+        let public = user_keys::canonical_key(alice_key.public_key()).unwrap();
+        user_keys::add(&state.db, user.id, &public).await.unwrap();
 
         // a key nobody registered
         let stranger_key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
@@ -371,7 +374,7 @@ mod tests {
     }
 
     /// Run a git command against the server as the ssh client would.
-    fn git(dir: &Path, args: &[&str], ssh_command: &str) -> std::process::Output {
+    fn git(dir: &std::path::Path, args: &[&str], ssh_command: &str) -> std::process::Output {
         use std::process::Command;
         let out = Command::new("git")
             .args(args)
@@ -389,6 +392,17 @@ mod tests {
         out
     }
 
+    fn rev_parse(dir: &std::path::Path, reference: &str) -> Option<String> {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "--verify", reference])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        out.status
+            .success()
+            .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
+    }
+
     /// Wait until 'predicate' is true, polling for up to 10 seconds:
     /// the relay of a push runs in the background.
     fn eventually(predicate: impl Fn() -> bool) -> bool {
@@ -401,22 +415,9 @@ mod tests {
         false
     }
 
-    fn rev_parse(dir: &Path, reference: &str) -> Option<String> {
-        let out = std::process::Command::new("git")
-            .args(["rev-parse", "--verify", reference])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        out.status
-            .success()
-            .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
-    }
-
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn git_clients_fetch_and_push_over_ssh() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = state(dir.path());
-        let work = dir.path().join("work");
+        let (dir, state) = test_state().await;
 
         // a bare origin: the real repository the server mirrors
         let origin = dir.path().join("origin.git");
@@ -452,26 +453,44 @@ mod tests {
         } // dropped: the tod branch is pushed to the bare origin
 
         // the server: user + key + registered repository
-        state.db.create_user("alice", "pass").unwrap();
+        let params = crate::models::users::RegisterParams {
+            email: "alice@tod.local".into(),
+            password: "pass123".into(),
+            name: "Alice".into(),
+        };
+        let user = crate::models::users::Model::create_with_password(&state.db, &params)
+            .await
+            .unwrap();
         let key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
-        state
-            .db
-            .add_key("alice", &key.public_key().to_openssh().unwrap())
-            .unwrap();
-        state
-            .db
-            .add_repo("proj", origin.to_string_lossy().as_ref())
-            .unwrap();
+        user_keys::add(
+            &state.db,
+            user.id,
+            &user_keys::canonical_key(key.public_key()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let repo = crate::models::repos::ActiveModel {
+            name: sea_orm::ActiveValue::set("proj".to_string()),
+            url: sea_orm::ActiveValue::set(origin.to_string_lossy().into_owned()),
+            ..Default::default()
+        }
+        .insert(&state.db)
+        .await
+        .unwrap();
 
         let config = config(&state.workdir).unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        tokio::spawn(serve_on(state.clone(), config, listener));
+        let workdir = state.workdir.clone();
+        tokio::spawn(serve_on(state, config, listener));
 
         // the git client: ssh with the registered key
         let keyfile = dir.path().join("id_ed25519");
-        std::fs::write(&keyfile, key.to_openssh(ssh_key::LineEnding::default()).unwrap().as_bytes())
-            .unwrap();
+        std::fs::write(
+            &keyfile,
+            key.to_openssh(ssh_key::LineEnding::default()).unwrap().as_bytes(),
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -483,7 +502,7 @@ mod tests {
         );
 
         // fetch: clone the repository through the server
-        let clone = work.join("clone");
+        let clone = dir.path().join("clone");
         git(
             dir.path(),
             &[
@@ -521,7 +540,7 @@ mod tests {
         git(&clone, &["commit", "-m", "tod: add dead"], "");
         git(&clone, &["push", "origin", "tod"], &ssh_command);
 
-        let mirror = state.workdir.join("1-proj.git");
+        let mirror = workdir.join(format!("{}-{}.git", repo.id, "proj"));
         assert!(
             eventually(|| mirror.join("tod-worktree/todo/main/dead").is_file()),
             "the server's tod worktree did not follow the push"

@@ -65,22 +65,35 @@ on the repo) picks it up.
 
 ## Project management server
 
-`tod-server` manages **several repositories** at once:
+`tod-server` manages **several repositories** at once. It is a
+[Loco](https://loco.rs) application (controllers, SeaORM models,
+migrations, YAML configuration) built on axum:
 
-- **SQLite database** (`--db`): users, sessions, and the registry of
-  managed repositories.
-- **Login/password**: passwords are hashed with Argon2; sessions are
-  bearer tokens. Bootstrap the first account with the
-  `TOD_ADMIN_USER` / `TOD_ADMIN_PASS` environment variables.
-- **Git**: each registered repository (https/git@/ssh URL, or a local
-  path) is cloned into the workdir and updated with
-  `git pull --ff-only` before each use. It must have a `tod` branch
+- **SQLite database** through SeaORM migrations (`users`, `repos`,
+  `user_keys`): apply them with
+  `cargo run -p server -- db migrate`.
+- **Login**: passwords are hashed (Argon2), authentication is **JWT**
+  (`POST /api/login {username, password}` — the username is the
+  email — returns a bearer token). Create users with the CLI task:
+  `cargo run -p server -- task user:create email:you@example.com name:You password:secret`.
+- **Git mirrors**: each registered repository (https/git@/ssh URL, or
+  a local path) is cloned into the workdir as a **bare mirror** and
+  updated with `git remote update --prune` before each use. The
+  original is never touched. A repository must have a `tod` branch
   (run `tod init` in it first).
-- **Web console** served from `--static` (the built `crates/web/dist`).
+- **Git over SSH**: the server embeds an SSH server — clients clone
+  and push through it, authenticated by the registered keys.
+- **Web console** served as the static fallback.
 
 ```bash
-cargo run -p server -- --port 8080 --db tod-server.db --workdir .tod-server --static crates/web/dist
+cargo run -p server -- start   # development (see crates/server/config/)
 ```
+
+The `settings` section of the configuration file drives the tod
+specifics: `workdir` (mirrors + SSH host key), `ssh_port` (default
+2222), `static_dir` (built web console). Paths are relative to the
+process working directory; production ships its own config
+(`--environment production`).
 
 API (all task endpoints are scoped per repository and need the
 `Authorization: Bearer <token>` header):
@@ -93,9 +106,33 @@ API (all task endpoints are scoped per repository and need the
 - `POST /api/repos/:id/task {description, context}`
 - `POST /api/repos/:id/sub {uid, text}`
 - `POST /api/repos/:id/check {uid, number}`
+- `GET/POST /api/keys` — list / register your SSH public keys
+- `DELETE /api/keys/:id` — remove one of your keys
 
 Mutations are committed to the `tod` branch and pushed to the
 repository's origin automatically.
+
+### Git over SSH
+
+The server is a git server in its own right: repositories are served
+from their mirror, every branch can be fetched and pushed, and what
+clients push is relayed to the repository's origin.
+
+```bash
+# register your SSH key (one line, from ~/.ssh/id_ed25519.pub)
+curl -X POST http://server:8080/api/keys \
+     -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+     -d "{\"public_key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"
+
+# then use it like any git remote
+git clone ssh://git@server:2222/<repo-name>.git
+git push origin tod
+```
+
+The login name is ignored (`git@…`): the SSH key itself identifies
+the user. Only `git-upload-pack` and `git-receive-pack` can run —
+nothing else is executable through SSH. Pushing the `tod` branch
+updates the server's own task view immediately.
 
 ### Web console (Yew)
 
@@ -120,14 +157,15 @@ packs everything into a minimal Alpine image:
 ```bash
 docker build -t tod-server .
 
-docker run -p 8080:8080 \
-  -e TOD_ADMIN_USER=admin -e TOD_ADMIN_PASS=changeme \
+docker run -p 8080:8080 -p 2222:2222 \
   -v tod-data:/data \
   tod-server
 ```
 
-- `/data` (volume): the SQLite database (`tod-server.db`) and the
-  cloned repositories (`repos/`).
+- `/data` (volume): the SQLite database (`tod-server.db`), the SSH
+  host key, and the mirrored repositories (`repos/`).
+- Create the first user in the container:
+  `docker exec <container> tod-server --environment production task user:create email:you@example.com name:You password:secret`.
 - The first start creates the admin account from the environment
   variables; afterwards users come from the database.
 - `git` is included in the image (clone/pull at runtime).

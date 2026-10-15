@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>tod — project console</title>
+  <link rel="stylesheet" href="/main-3813badc0f86c3fe.css" integrity="sha384-U733uDBgSWcSwi5GroOhUA4ybwVhdA0KvVYrhrxhJcp4Eo4ZPzvNidBjWPdqdUDn"/>
+  
+<script type="module">
+import init, * as bindings from '/web-bebe81a22f502190.js';
+const wasm = await init({ module_or_path: '/web-bebe81a22f502190_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+<link rel="modulepreload" href="/web-bebe81a22f502190.js" crossorigin="anonymous" integrity="sha384-GwcmqaGm3up/n6FavmnnteQVpqQra6OUomvEKVuu73JVDEeP+jBNJp8Kdqa9oBjV"><link rel="preload" href="/web-bebe81a22f502190_bg.wasm" crossorigin="anonymous" integrity="sha384-Zd4+8x1LhaM0pJPMp1HJXeN4uGZwZIkHjGO08GxZ2ElFgPWQOUk6x4hKSFiUCl7N" as="fetch" type="application/wasm"></head>
+<body>
+</body>
+</html>

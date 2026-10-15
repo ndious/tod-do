@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/dot", "crates/cli", "crates/server", "crates/web"]
+members = ["crates/dot", "crates/cli", "crates/server", "crates/server/migration", "crates/web"]
 default-members = ["crates/dot", "crates/cli", "crates/server"]
 
 [workspace.package]
@@ -23,6 +23,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 argon2 = "0.5"
 rand = "0.8"
 yew = { version = "0.21", features = ["csr"] }
+loco-rs = "1.2"
 gloo-net = { version = "0.5", features = ["json"] }
 wasm-bindgen-futures = "0.4"
 

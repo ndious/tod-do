@@ -1,11 +1,14 @@
 //! Clone / update the managed git repositories.
+//!
+//! Every registered repository lives as a bare mirror in the server
+//! workdir. The repository registry is the SeaORM `repos` entity.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-use crate::db::Repo;
+use crate::models::repos::Model as Repo;
 
 fn git(dir: Option<&Path>, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
@@ -100,6 +103,18 @@ mod tests {
     use dot::store::Store;
     use std::process::Command;
 
+    /// A repository entity with fake timestamps.
+    fn test_repo(id: i64, name: &str, url: String) -> Repo {
+        let now = chrono::Utc::now();
+        Repo {
+            id,
+            name: name.to_string(),
+            url,
+            created_at: now.into(),
+            updated_at: now.into(),
+        }
+    }
+
     /// A temp directory with a real git repository, its tod storage
     /// initialized and one backlog task.
     fn git_repo_with_tod() -> tempfile::TempDir {
@@ -115,7 +130,7 @@ mod tests {
     #[test]
     fn local_repo_without_tod_branch_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = Repo { id: 1, name: "p".into(), url: dir.path().to_string_lossy().into_owned() };
+        let repo = test_repo(1, "p", dir.path().to_string_lossy().into_owned());
         let workdir = tempfile::tempdir().unwrap();
         assert!(prepare(&repo, workdir.path()).is_err());
     }
@@ -124,7 +139,7 @@ mod tests {
     fn prepare_mirrors_the_repository_and_serves_its_todos() {
         let origin = git_repo_with_tod();
         let workdir = tempfile::tempdir().unwrap();
-        let repo = Repo { id: 7, name: "proj".into(), url: origin.path().to_string_lossy().into_owned() };
+        let repo = test_repo(7, "proj", origin.path().to_string_lossy().into_owned());
 
         let root = prepare(&repo, workdir.path()).unwrap();
         assert!(root.ends_with("7-proj.git"));
@@ -173,7 +188,7 @@ mod tests {
 
         // the server mirrors the repository
         let workdir = tempfile::tempdir().unwrap();
-        let repo = Repo { id: 3, name: "proj".into(), url: origin.to_string_lossy().into_owned() };
+        let repo = test_repo(3, "proj", origin.to_string_lossy().into_owned());
         let mirror = prepare(&repo, workdir.path()).unwrap();
         assert!(git(Some(&mirror), &["rev-parse", "--verify", "refs/heads/tod"]).is_ok());
 

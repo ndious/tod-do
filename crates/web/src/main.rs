@@ -3,18 +3,37 @@
 
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
+/// The current value of a text input event.
+fn input_value(e: InputEvent) -> String {
+    e.target()
+        .expect("input without target")
+        .dyn_into::<web_sys::HtmlInputElement>()
+        .expect("not an input")
+        .value()
+}
+
+/// The current value of a select event.
+fn select_value(e: InputEvent) -> String {
+    e.target()
+        .expect("select without target")
+        .dyn_into::<web_sys::HtmlSelectElement>()
+        .expect("not a select")
+        .value()
+}
+
 // ---------- api types ----------
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct StepView {
     pub done: bool,
     pub text: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskView {
     pub uid: String,
     pub description: String,
@@ -68,7 +87,8 @@ struct LoginResp { token: String }
 
 async fn api_login(u: String, p: String) -> Option<String> {
     let body = serde_json::json!({ "username": u, "password": p });
-    let resp = Request::post("/api/login").json(&body).send().await.ok()?;
+    let request = Request::post("/api/login").json(&body).ok()?;
+    let resp = request.send().await.ok()?;
     if !resp.ok() {
         return None;
     }
@@ -76,12 +96,14 @@ async fn api_login(u: String, p: String) -> Option<String> {
 }
 
 async fn api_post(token: &str, path: &str, body: &serde_json::Value) -> bool {
-    match Request::post(path)
+    let request = match Request::post(path)
         .header("Authorization", &format!("Bearer {token}"))
         .json(body)
-        .send()
-        .await
     {
+        Ok(request) => request,
+        Err(_) => return false,
+    };
+    match request.send().await {
         Ok(resp) => resp.ok(),
         Err(_) => false,
     }
@@ -172,7 +194,7 @@ pub fn task_card(props: &TaskCardProps) -> Html {
                     type="text"
                     placeholder="new micro todo…"
                     value={(*new_step).clone()}
-                    oninput={Callback::from(move |e: InputEvent| new_step.set(e.data_concat()))}
+                    oninput={Callback::from(move |e: InputEvent| new_step.set(input_value(e)))}
                 />
                 <button type="submit">{ "+" }</button>
             </form>
@@ -238,9 +260,9 @@ pub fn add_form(props: &AddFormProps) -> Html {
                 type="text"
                 placeholder="new task…"
                 value={(*description).clone()}
-                oninput={Callback::from(move |e: InputEvent| description.set(e.data_concat()))}
+                oninput={Callback::from(move |e: InputEvent| description.set(input_value(e)))}
             />
-            <select oninput={Callback::from(move |e: InputEvent| ctx.set(e.data_concat()))}>
+            <select oninput={Callback::from(move |e: InputEvent| ctx.set(select_value(e)))}>
                 { options }
             </select>
             <button type="submit">{ "add" }</button>
@@ -287,13 +309,13 @@ pub fn login(props: &LoginProps) -> Html {
                 type="text"
                 placeholder="username"
                 value={(*username).clone()}
-                oninput={Callback::from(move |e: InputEvent| username.set(e.data_concat()))}
+                oninput={Callback::from(move |e: InputEvent| username.set(input_value(e)))}
             />
             <input
                 type="password"
                 placeholder="password"
                 value={(*password).clone()}
-                oninput={Callback::from(move |e: InputEvent| password.set(e.data_concat()))}
+                oninput={Callback::from(move |e: InputEvent| password.set(input_value(e)))}
             />
             if *error {
                 <p class="error">{ "invalid username or password" }</p>
@@ -312,6 +334,10 @@ pub fn app() -> Html {
     let current = use_state(|| Option::<i64>::None);
     let status = use_state(Status::default);
     let error = use_state(String::new);
+    // all hooks must live at the top level of the component, even
+    // the ones only used once logged in
+    let new_repo_name = use_state(String::new);
+    let new_repo_url = use_state(String::new);
 
     let refresh_repos = {
         let token = token.clone();
@@ -368,23 +394,19 @@ pub fn app() -> Html {
                 .iter()
                 .map(|r| {
                     let selected = *current == Some(r.id);
-                    html! { <option value={r.id} {selected}>{ r.name.clone() }</option> }
+                    html! { <option value={r.id.to_string()} {selected}>{ r.name.clone() }</option> }
                 })
                 .collect::<Html>();
 
             let on_select_repo = {
                 let current = current.clone();
                 Callback::from(move |e: InputEvent| {
-                    if let Some(v) = e.data() {
-                        if let Ok(id) = v.parse::<i64>() {
-                            current.set(Some(id));
-                        }
+                    let v = select_value(e);
+                    if let Ok(id) = v.parse::<i64>() {
+                        current.set(Some(id));
                     }
                 })
             };
-
-            let new_repo_name = use_state(String::new);
-            let new_repo_url = use_state(String::new);
 
             let on_add_repo = {
                 let t = t.clone();
@@ -411,31 +433,46 @@ pub fn app() -> Html {
                 })
             };
 
-            let backlog = s
-                .backlog
-                .iter()
-                .map(|task| html! { <TaskCard token={t.clone()} repo_id={*current} task={task.clone()} on_refresh={refresh_status.clone()} /> })
-                .collect::<Html>();
-
             let ctx_names: Vec<String> = s.contexts.iter().map(|c| c.name.clone()).collect();
 
-            let contexts = s
-                .contexts
-                .iter()
-                .map(|c| {
-                    let tasks = c
-                        .tasks
+            // the task board only exists once a repository is selected
+            let board = match *current {
+                Some(id) => {
+                    let backlog = s
+                        .backlog
                         .iter()
-                        .map(|task| html! { <TaskCard token={t.clone()} repo_id={*current} task={task.clone()} on_refresh={refresh_status.clone()} /> })
+                        .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
+                        .collect::<Html>();
+                    let contexts = s
+                        .contexts
+                        .iter()
+                        .map(|c| {
+                            let tasks = c
+                                .tasks
+                                .iter()
+                                .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
+                                .collect::<Html>();
+                            html! {
+                                <section class="context">
+                                    <h2>{ format!("context: {}", c.name) }</h2>
+                                    <ul>{ tasks }</ul>
+                                </section>
+                            }
+                        })
                         .collect::<Html>();
                     html! {
-                        <section class="context">
-                            <h2>{ format!("context: {}", c.name) }</h2>
-                            <ul>{ tasks }</ul>
-                        </section>
+                        <>
+                            <AddForm token={t.clone()} repo_id={id} contexts={ctx_names} on_refresh={refresh_status.clone()} />
+                            <section class="backlog">
+                                <h2>{ "backlog" }</h2>
+                                <ul>{ backlog }</ul>
+                            </section>
+                            { contexts }
+                        </>
                     }
-                })
-                .collect::<Html>();
+                }
+                None => html! {},
+            };
 
             html! {
                 <main>
@@ -454,33 +491,26 @@ pub fn app() -> Html {
                         <button onclick={Callback::from(move |_| refresh_status.emit(()))}>{ "refresh" }</button>
                     </div>
 
-                    <div class="bar">
+                    <form class="bar" onsubmit={on_add_repo}>
                         <input
                             type="text"
                             placeholder="repo name"
                             value={(*new_repo_name).clone()}
-                            oninput={Callback::from(move |e: InputEvent| new_repo_name.set(e.data_concat()))}
+                            oninput={Callback::from(move |e: InputEvent| new_repo_name.set(input_value(e)))}
                         />
                         <input
                             type="text"
                             placeholder="git URL or local path"
                             value={(*new_repo_url).clone()}
-                            oninput={Callback::from(move |e: InputEvent| new_repo_url.set(e.data_concat()))}
+                            oninput={Callback::from(move |e: InputEvent| new_repo_url.set(input_value(e)))}
                         />
-                        <button onclick={Callback::from(move |_| on_add_repo.emit(Default::default()))}>{ "add repo" }</button>
-                    </div>
+                        <button type="submit">{ "add repo" }</button>
+                    </form>
                     if !(*error).is_empty() {
                         <p class="meta">{ (*error).clone() }</p>
                     }
 
-                    if *current != None {
-                        <AddForm token={t.clone()} repo_id={*current} contexts={ctx_names} on_refresh={refresh_status.clone()} />
-                        <section class="backlog">
-                            <h2>{ "backlog" }</h2>
-                            <ul>{ backlog }</ul>
-                        </section>
-                        { contexts }
-                    }
+                    { board }
                 </main>
             }
         }
