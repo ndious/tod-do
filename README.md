@@ -268,6 +268,7 @@ tod start 919fe            # create a work branch for a task and move it there
 tod ctx                    # contexts with todos
 tod resolve feature/login  # close a context
 tod export todos.json      # export the whole database
+tod completions bash       # shell completion script (bash, zsh, fish…)
 ```
 
 ## Differences with tod-cli

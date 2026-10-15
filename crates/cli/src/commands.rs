@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{IsTerminal, Write};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use dot::brief;
 use dot::git;
@@ -462,4 +462,22 @@ mod tests {
         assert_eq!(store.load_backlog().unwrap().len(), 1);
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), "fix-the-login-bug");
     }
+}
+
+/// Print the shell completion script. The installation one-liner:
+/// `eval "$(tod completions <shell>)"`.
+pub fn completions(shell: &str) -> Result<()> {
+    let shell = shell.to_lowercase();
+    if !matches!(shell.as_str(), "bash" | "zsh" | "fish" | "powershell" | "elvish") {
+        bail!("unknown shell '{shell}' (bash | zsh | fish | powershell | elvish)");
+    }
+    // the registration script is printed by the binary itself when
+    // invoked with COMPLETE=<shell> and no arguments
+    let exe = std::env::current_exe()?;
+    let out = std::process::Command::new(exe)
+        .env("COMPLETE", &shell)
+        .output()
+        .map_err(|e| anyhow::anyhow!("cannot run the completion generator: {e}"))?;
+    print!("{}", String::from_utf8_lossy(&out.stdout));
+    Ok(())
 }

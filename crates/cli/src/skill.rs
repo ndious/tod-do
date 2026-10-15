@@ -108,6 +108,7 @@ tod plan "text"         # (human) new task with a plan + brief
 tod sub <id> "text"     # (human) add a step to a plan
 tod x <id>              # (human) mark a task complete
 tod rm / mv / start / ctx / resolve / export   # (human) maintenance
+tod completions <shell>    # (human) install shell completion (ids of tasks included)
 ```
 
 ## Storage (read-only for agents)

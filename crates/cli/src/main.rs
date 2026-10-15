@@ -1,8 +1,35 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
+use clap_complete::CompleteEnv;
 
 mod commands;
 mod skill;
+
+/// The ids of every task (backlog + contexts), for the shell
+/// completion of the commands that take a task identifier.
+fn task_id_candidates() -> Vec<CompletionCandidate> {
+    let Ok(store) = dot::store::Store::discover() else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    let mut push = |tasks: Vec<dot::task::Task>, context: &str| {
+        for task in tasks {
+            candidates.push(CompletionCandidate::new(task.uid).help(Some(
+                format!("[{context}] {}", task.description).into(),
+            )));
+        }
+    };
+    if let Ok(backlog) = store.load_backlog() {
+        push(backlog, "backlog");
+    }
+    if let Ok(contexts) = store.contexts() {
+        for (name, tasks) in contexts {
+            push(tasks, &name);
+        }
+    }
+    candidates
+}
 
 /// tod — a git-native todo CLI with planning support.
 ///
@@ -60,6 +87,7 @@ enum Commands {
     /// Add a step (micro todo) to a task's plan
     Sub {
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
         /// The step description
         step: String,
@@ -67,6 +95,7 @@ enum Commands {
     /// Toggle a step of a task's plan (1-based)
     Check {
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
         /// Step number (1-based)
         number: usize,
@@ -74,6 +103,7 @@ enum Commands {
     /// (Re)generate and print the spec markdown of a task
     Brief {
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
     /// Project overview: backlog and contexts, with progress
@@ -93,6 +123,7 @@ enum Commands {
     /// Mark a task as complete (current context only)
     X {
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
     /// Delete a task
@@ -101,6 +132,7 @@ enum Commands {
         #[arg(short, long)]
         backlog: bool,
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
     /// Move a task between the backlog and the current context
@@ -109,11 +141,13 @@ enum Commands {
         #[arg(short, long)]
         backlog: bool,
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
     /// Start a task: create a working branch for it and move it there
     Start {
         /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
         /// Branch name (default: derived from the task description)
         #[arg(short, long, value_name = "NAME")]
@@ -131,9 +165,16 @@ enum Commands {
         /// Output file path
         output: String,
     },
+    /// Print the shell completion script (bash | zsh | fish | powershell | elvish)
+    Completions {
+        /// The target shell
+        shell: String,
+    },
 }
 
 fn main() -> Result<()> {
+    // answer the shell completion requests before anything else
+    CompleteEnv::with_factory(|| Cli::command().bin_name("tod")).complete();
     let cli = Cli::parse();
     match cli.command {
         Commands::Init { skill, no_skill, agent } => commands::init(skill, no_skill, agent),
@@ -152,5 +193,6 @@ fn main() -> Result<()> {
         Commands::Ctx => commands::ctx(),
         Commands::Resolve { context } => commands::resolve(&context),
         Commands::Export { output } => commands::export(&output),
+        Commands::Completions { shell } => commands::completions(&shell),
     }
 }
