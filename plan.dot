@@ -16,6 +16,7 @@
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
 70bb008ca0f646ba2a8e5d52bdb686eb0e4d811c:
 	[ ] POC: installer le CLI loco, generer une app api-only sqlite, valider son integration dans le workspace a la place de crates/server
+	[ ] scaffold: config yaml (dev/prod), cycle de vie Loco, modules git conserves (repos.rs, ssh.rs) en attente de branchage
 a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] refactor: les clones du server deviennent des miroirs bare (git clone --mirror), le worktree tod est cree depuis le bare, Store supporte une racine bare
 	[x] sync: git remote update --prune avant chaque usage + relai push miroir vers origin apres un receive
