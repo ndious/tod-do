@@ -14,3 +14,5 @@
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
 	[x] cli: commande start avec --branch optionnel, help, README, SKILL.md
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
+a22e94e6843d0fe15a32e337ad2460b51f437ab7:
+	[ ] refactor: les clones du server deviennent des miroirs bare (git clone --mirror), le worktree tod est cree depuis le bare, Store supporte une racine bare
