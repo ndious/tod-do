@@ -3,7 +3,7 @@
 	[x] store: pull avant chaque commande (avec dedup par instance) et push apres chaque commit
 	[x] tests: sync deux machines via un bare distant + remote injoignable = warning
 	[x] README: documenter le comportement de synchronisation
-	[ ] perf: push une seule fois par commande (fin de vie du Store) et seulement si commit reel
+	[x] perf: push une seule fois par commande (fin de vie du Store) et seulement si commit reel
 	[ ] perf: pull assujetti a un TTL (TOD_SYNC_TTL, defaut 30s, marqueur dans .git)
 	[ ] TOD_NO_SYNC kill switch + tests + README + bench avant/apres
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
