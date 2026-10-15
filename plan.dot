@@ -1,2 +1,3 @@
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
 	[ ] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
+	[ ] git: slug de branche depuis la description + creation/checkout de la branche
