@@ -141,22 +141,70 @@ pub fn delete_branch(root: &Path, branch: &str) -> Result<()> {
         .map(|_| ())
 }
 
-/// Turn a task description into a valid git branch name: lowercase,
-/// words joined with '-', at most 60 characters.
+/// Transliterate the common accented Latin characters to ASCII, so
+/// branch names stay tool-friendly (URLs, shells, percent-encoding).
+fn ascii_fold(c: char) -> Option<&'static str> {
+    Some(match c {
+        'à' | 'á' | 'â' | 'ä' | 'ã' | 'å' => "a",
+        'è' | 'é' | 'ê' | 'ë' => "e",
+        'ì' | 'í' | 'î' | 'ï' => "i",
+        'ò' | 'ó' | 'ô' | 'ö' | 'õ' => "o",
+        'ù' | 'ú' | 'û' | 'ü' => "u",
+        'ç' => "c",
+        'ñ' => "n",
+        'œ' => "oe",
+        'æ' => "ae",
+        'ß' => "ss",
+        _ => return None,
+    })
+}
+
+/// Turn a task description into the slug of its branch name: pure
+/// ASCII (accents transliterated), words joined with '-', never cut
+/// in the middle of a word, at most 30 characters — the task uid in
+/// the branch name already identifies it, the slug is only a
+/// readable hint.
 pub fn branch_slug(description: &str) -> String {
-    let mut slug = String::new();
-    let mut pending_dash = false;
-    for c in description.chars().flat_map(|c| c.to_lowercase()) {
-        if c.is_alphanumeric() && slug.chars().count() < 60 {
-            slug.push(c);
-            pending_dash = false;
-        } else if !slug.is_empty() && !pending_dash {
-            slug.push('-');
-            pending_dash = true;
+    /// Max length of the slug.
+    const MAX: usize = 30;
+
+    // split into ASCII words
+    let mut words: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for orig in description.chars() {
+        let c = orig.to_lowercase().next().unwrap_or(orig);
+        let folded: String = match ascii_fold(c) {
+            Some(f) => f.to_string(),
+            None if c.is_ascii_alphanumeric() => c.to_string(),
+            None => String::new(),
+        };
+        if folded.is_empty() {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push_str(&folded);
         }
     }
-    while slug.ends_with('-') {
-        slug.pop();
+    if !current.is_empty() {
+        words.push(current);
+    }
+
+    // join as many whole words as fit
+    let mut slug = String::new();
+    for word in words {
+        if slug.is_empty() && word.len() > MAX {
+            // a single overlong word: keep its beginning as a hint
+            slug.push_str(&word[..MAX]);
+            break;
+        }
+        if slug.len() + word.len() + usize::from(!slug.is_empty()) > MAX {
+            break;
+        }
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(&word);
     }
     slug
 }
@@ -302,13 +350,18 @@ mod tests {
 
     #[test]
     fn branch_slug_is_a_valid_branch_name() {
+        // pure ASCII: accents transliterated
         assert_eq!(
             branch_slug("Créer une commande qui start une tache"),
-            "créer-une-commande-qui-start-une-tache"
+            "creer-une-commande-qui-start"
         );
+        assert_eq!(branch_slug("Affichage à la trello"), "affichage-a-la-trello");
         assert_eq!(branch_slug("Fix the login bug!"), "fix-the-login-bug");
         assert_eq!(branch_slug("  spaces  &  symbols  "), "spaces-symbols");
         assert_eq!(branch_slug("###"), "");
-        assert_eq!(branch_slug(&"x".repeat(100)).chars().count(), 60);
+        // never longer than 30, and never cut mid-word
+        assert_eq!(branch_slug(&"x".repeat(100)), "x".repeat(30));
+        let long = branch_slug("un un un un un un un un un un un un un");
+        assert!(long.chars().count() <= 30 && !long.ends_with('-'));
     }
 }

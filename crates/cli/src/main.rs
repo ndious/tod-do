@@ -159,7 +159,7 @@ enum Commands {
         #[arg(short, long, value_name = "NAME")]
         branch: Option<String>,
         /// Branch created from this branch instead of main
-        #[arg(short, long, value_name = "BRANCH")]
+        #[arg(long, value_name = "BRANCH")]
         base: Option<String>,
     },
     /// Finish the current task: rebase it, merge it into main,

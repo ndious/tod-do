@@ -286,12 +286,16 @@ plan/add -> start -> work -> rfr -> review (web console) -> finish
 
 `start` creates the working branch **from `main`** — tasks are
 independent by default; `--base <branch>` stacks one on another
-when it must. `rfr` marks the task ready for review and pushes its
-branch to origin (the web console shows the diff of pushed
-branches). `finish` rebases the branch on the base, merges it
-fast-forward only, deletes the merged branch and resolves its
-context. `x` closes a task from anywhere, whatever branch you are
-on.
+when it must. The branch is named `t/<uid7>-<slug>`: namespaced
+under `t/` (the `tod/` prefix is impossible — git forbids
+`refs/heads/tod/*` while the `tod` storage branch exists), linked
+to its task by the uid, with a pure-ASCII slug (accents
+transliterated, at most 30 characters, never cut mid-word). `rfr`
+marks the task ready for review and pushes its branch to origin
+(the web console shows the diff of pushed branches). `finish`
+rebases the branch on the base, merges it fast-forward only,
+deletes the merged branch and resolves its context. `x` closes a
+task from anywhere, whatever branch you are on.
 
 ## Differences with tod-cli
 

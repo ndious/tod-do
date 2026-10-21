@@ -331,11 +331,15 @@ fn start_in(store: &Store, identifier: &str, branch: Option<String>, base: &str)
     let branch = match branch {
         Some(name) => name,
         None => {
+            // t/<uid7>-<slug>: namespaced ('tod/' would collide with
+            // the tod storage branch itself), linked to the task by
+            // its identifier, with a short ASCII hint of its content
+            let uid7 = &task.uid[..7];
             let slug = git::branch_slug(&task.description);
             if slug.is_empty() {
-                format!("tod-{}", &task.uid[..7])
+                format!("t/{uid7}")
             } else {
-                slug
+                format!("t/{uid7}-{slug}")
             }
         }
     };
@@ -484,14 +488,15 @@ mod tests {
         let (dir, store) = git_repo();
         let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
 
-        // the branch name comes from the task description
+        // the branch name is namespaced and linked to the task by its uid
         start_in(&store, &task.uid[..7], None, "main").unwrap();
         assert_eq!(
             git::current_branch_in(dir.path()).unwrap(),
-            "fix-the-login-bug"
+            format!("t/{}-fix-the-login-bug", &task.uid[..7])
         );
         assert!(store.load_backlog().unwrap().is_empty());
-        assert_eq!(store.load_context("fix-the-login-bug").unwrap().len(), 1);
+        let taken = format!("t/{}-fix-the-login-bug", &task.uid[..7]);
+        assert_eq!(store.load_context(&taken).unwrap().len(), 1);
 
         // an explicit branch name overrides the slug
         let task2 = store.add_in(None, "Another one", "tester").unwrap();
@@ -499,12 +504,12 @@ mod tests {
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), "custom");
         assert_eq!(store.load_context("custom").unwrap().len(), 1);
 
-        // a useless description falls back to the uid prefix
+        // a useless description falls back to the bare uid prefix
         let task3 = store.add_in(None, "###", "tester").unwrap();
         start_in(&store, &task3.uid[..7], None, "main").unwrap();
         assert_eq!(
             git::current_branch_in(dir.path()).unwrap(),
-            format!("tod-{}", &task3.uid[..7])
+            format!("t/{}", &task3.uid[..7])
         );
     }
 
@@ -513,13 +518,14 @@ mod tests {
         let (dir, store) = git_repo();
         let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
         start_in(&store, &task.uid[..7], None, "main").unwrap();
+        let taken = format!("t/{}-fix-the-login-bug", &task.uid[..7]);
 
         let task2 = store.add_in(None, "Fix the login bug again", "tester").unwrap();
-        // 'fix-the-login-bug-again' is free, but an existing name must fail
-        assert!(start_in(&store, &task2.uid[..7], Some("fix-the-login-bug".into()), "main").is_err());
+        // the generated name is free, but an existing name must fail
+        assert!(start_in(&store, &task2.uid[..7], Some(taken.clone()), "main").is_err());
         // nothing moved: the second task is still in the backlog
         assert_eq!(store.load_backlog().unwrap().len(), 1);
-        assert_eq!(git::current_branch_in(dir.path()).unwrap(), "fix-the-login-bug");
+        assert_eq!(git::current_branch_in(dir.path()).unwrap(), taken);
     }
 }
 
