@@ -235,63 +235,6 @@ pub struct TaskCardProps {
 #[function_component(TaskCard)]
 pub fn task_card(props: &TaskCardProps) -> Html {
     let task = &props.task;
-    let new_step = use_state(String::new);
-
-    let on_check = {
-        let token = props.token.clone();
-        let path = format!("/api/repos/{}/check", props.repo_id);
-        let uid = task.uid.clone();
-        let on_refresh = props.on_refresh.clone();
-        Callback::from(move |n: usize| {
-            let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
-            let on_refresh = on_refresh.clone();
-            spawn_local(async move {
-                let body = serde_json::json!({ "uid": uid, "number": n });
-                api_post(&token, &path, &body).await;
-                on_refresh.emit(());
-            });
-        })
-    };
-
-    let steps = task
-        .plan
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let n = i + 1;
-            let on_check = on_check.clone();
-            let onclick = Callback::from(move |_| on_check.emit(n));
-            let class = if s.done { "step done" } else { "step" };
-            html! {
-                <li class={class} {onclick}>
-                    <input type="checkbox" class="checkbox checkbox-xs" checked={s.done} />
-                    <span>{ s.text.clone() }</span>
-                </li>
-            }
-        })
-        .collect::<Html>();
-
-    let on_submit_step = {
-        let token = props.token.clone();
-        let path = format!("/api/repos/{}/sub", props.repo_id);
-        let uid = task.uid.clone();
-        let new_step = new_step.clone();
-        let on_refresh = props.on_refresh.clone();
-        Callback::from(move |e: SubmitEvent| {
-            e.prevent_default();
-            let text = (*new_step).clone();
-            if text.trim().is_empty() {
-                return;
-            }
-            let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
-            let on_refresh = on_refresh.clone();
-            spawn_local(async move {
-                let body = serde_json::json!({ "uid": uid, "text": text });
-                api_post(&token, &path, &body).await;
-                on_refresh.emit(());
-            });
-        })
-    };
 
     let class = if task.done { "task done card bg-base-100" } else { "task card bg-base-100" };
     let short = &task.uid[..task.uid.len().min(7)];
@@ -303,19 +246,6 @@ pub fn task_card(props: &TaskCardProps) -> Html {
             if !task.plan.is_empty() {
                 <span class="badge badge-primary badge-sm">{ format!("{}/{}", task.progress.0, task.progress.1) }</span>
             }
-            if !task.plan.is_empty() {
-                <ol class="plan">{ steps }</ol>
-            }
-            <form class="sub" onsubmit={on_submit_step}>
-                <input
-                    type="text"
-                    class="input input-bordered input-sm"
-                    placeholder="new micro todo…"
-                    value={(*new_step).clone()}
-                    oninput={Callback::from(move |e: InputEvent| new_step.set(input_value(e)))}
-                />
-                <button type="submit" class="btn btn-sm">{ "+" }</button>
-            </form>
         </li>
     }
 }
