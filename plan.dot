@@ -49,4 +49,4 @@ db6cc5fc4417610987c4cb153ddcb17d5875ea27:
 	[x] rebuild trunk + smoke test console serve + suite verte
 	[x] persistance: token en localStorage + restauration au chargement + bouton logout
 	[x] 401 -> deconnexion automatique (token invalide/expire) + rebuild + smoke
-	[ ] ops: donnees du serveur hors /tmp (chemins par defaut du repo) + auto-selection du premier repo apres login
+	[x] ops: donnees du serveur hors /tmp (chemins par defaut du repo) + auto-selection du premier repo apres login
