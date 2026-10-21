@@ -68,10 +68,6 @@ ad64a1e2feadac8a418755e1c2144109c57a2f02:
 	[x] rfr: etat ready-for-review + push de la branche + badge web
 	[x] finish: rebase sur main + ff-merge + suppression branche + resolve contexte
 	[x] README workflow + build + tests + smoke
-b0f2c8d0d0d63b7b5f7532d0163c22e4bf0491d1:
-	[x] spawn_push: retry jusqu'a 5 fois avec backoff quand le push de fond est rejete (course)
-	[x] sync_pull: warning unpushed seulement si aucun push lance dans les 60 dernieres secondes (marqueur mtime)
-	[x] test + verification rafale sans warning
 d121053de1b1fd3df9374ac51f48313add2f9734:
 	[x] cli: CompleteEnv + candidats d'ids dynamiques (x/rm/mv/start/brief/sub/check)
 	[x] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh
