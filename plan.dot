@@ -28,6 +28,8 @@
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
 	[x] cli: commande start avec --branch optionnel, help, README, SKILL.md
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
+51a1b5be4f0f31d9cd058abbc91cb421aa31b81a:
+	[ ] etape 1
 53ac2da61503c5e48268370f34a75ff0ddf70c23:
 	[x] serveur: clone_url dans l'API repos (host du header Host + port ssh des settings)
 	[x] web: bar clone sur la page repo, bouton copy via l'API clipboard
