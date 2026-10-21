@@ -14,7 +14,7 @@
 	[x] header navbar: titre + nav (repos, nouveau) + logout
 	[x] page creation dediee + redirection vers le repo cree
 	[x] page repo: board complet (status, add, backlog, contexts), liste des repos en page d'accueil
-	[ ] rebuild trunk + smoke + suite verte + README
+	[x] rebuild trunk + smoke + suite verte + README
 18703f3c388b68953c587bd3841e127cf810dc01:
 	[x] cli: ls masque les taches faites par defaut, -a/--all pour tout montrer
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
