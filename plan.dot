@@ -20,6 +20,8 @@
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
 	[x] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
 	[x] README/SKILL.md + smoke test multi-contextes
+286499b0a60792accee18ff80c31db4e56624552:
+	[ ] etape 1
 44a680cc4a6d9e518cb04f55d18adae74eee22b1:
 	[x] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
 	[x] overlay TaskDetail: description, meta, plan cliquable, ajout de step, fermeture (bouton, fond, Escape)
