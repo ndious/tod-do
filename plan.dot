@@ -11,7 +11,7 @@
 	[x] server: push async + tests avec polling + README + bench final
 0f758efb73db07e1445e0c12fdffbe260ccc89e9:
 	[x] routing hash minimal: enum Route, hashchange listener, liens de navigation
-	[ ] header navbar: titre + nav (repos, nouveau) + logout
+	[x] header navbar: titre + nav (repos, nouveau) + logout
 	[ ] page creation dediee + redirection vers le repo cree
 	[ ] page repo: board complet (status, add, backlog, contexts), liste des repos en page d'accueil
 	[ ] rebuild trunk + smoke + suite verte + README
