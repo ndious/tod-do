@@ -9,6 +9,8 @@
 	[x] git: spawn_push en tache de fond (processus detache + thread reaper) + helper ahead_of
 	[x] store: push async par defaut depuis discover (TOD_SYNC_PUSH=sync pour bloquer), auto-retry si origin en retard
 	[x] server: push async + tests avec polling + README + bench final
+0f758efb73db07e1445e0c12fdffbe260ccc89e9:
+	[ ] routing hash minimal: enum Route, hashchange listener, liens de navigation
 18703f3c388b68953c587bd3841e127cf810dc01:
 	[x] cli: ls masque les taches faites par defaut, -a/--all pour tout montrer
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
