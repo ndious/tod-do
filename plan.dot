@@ -41,7 +41,7 @@
 	[x] tests: e2e ssh + api portes sous loco, suite verte
 	[x] README: nouvelle section serveur loco (config, migrations, JWT)
 91a2227fbb69156f26f49f62a9ca0fb38c8219d6:
-	[ ] board kanban horizontal: une colonne par contexte, backlog en premier
+	[x] board kanban horizontal: une colonne par contexte, backlog en premier
 	[ ] colonnes scrollables, cartes task existantes (plan cliquable), done en bas
 	[ ] build trunk + smoke serveur + suite verte
 a22e94e6843d0fe15a32e337ad2460b51f437ab7:
