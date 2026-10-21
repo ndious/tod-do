@@ -31,7 +31,7 @@
 53ac2da61503c5e48268370f34a75ff0ddf70c23:
 	[x] serveur: clone_url dans l'API repos (host du header Host + port ssh des settings)
 	[x] web: bar clone sur la page repo, bouton copy via l'API clipboard
-	[ ] build trunk + smoke + suite verte
+	[x] build trunk + smoke + suite verte
 6d3c06a64acbe9cb5b834f61b31e535b98ee352b:
 	[x] server: POST /api/repos url vide -> creation bare + branches main/tod (commit orphelin) + worktree tod
 	[x] repos.rs: prepare/relay tolerent un repository sans origin
