@@ -48,7 +48,7 @@
 	[x] tests: e2e ssh + api portes sous loco, suite verte
 	[x] README: nouvelle section serveur loco (config, migrations, JWT)
 79e1bc075feb3cd1cda7ab99ed1ef37910720554:
-	[ ] branch_slug ascii: accents translitteres, 30 chars max, jamais coupe au milieu d'un mot
+	[x] branch_slug ascii: accents translitteres, 30 chars max, jamais coupe au milieu d'un mot
 	[ ] start: branche t/uid7-slug (tod/ interdit par git: refs/heads/tod existe)
 	[ ] tests + README + cycle complet rfr/x/finish
 91a2227fbb69156f26f49f62a9ca0fb38c8219d6:
