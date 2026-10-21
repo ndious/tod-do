@@ -62,6 +62,8 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] README + Dockerfile: doc (git remote add, gestion des cles), exposition du port ssh
 	[x] recherche/POC: crate candidate pour le serveur git (gitoxide, russh, libgit2, alternatives) + decision argumentee transport/exec
 	[x] decision consignee: transport = russh + exec git-upload-pack/receive-pack (le binaire git gere le protocole, gitoxide n'a pas de serveur); gitserver-http reserve a un futur transport HTTP
+ad64a1e2feadac8a418755e1c2144109c57a2f02:
+	[ ] start: branche depuis main (--base pour empiler)
 b0f2c8d0d0d63b7b5f7532d0163c22e4bf0491d1:
 	[x] spawn_push: retry jusqu'a 5 fois avec backoff quand le push de fond est rejete (course)
 	[x] sync_pull: warning unpushed seulement si aucun push lance dans les 60 dernieres secondes (marqueur mtime)
