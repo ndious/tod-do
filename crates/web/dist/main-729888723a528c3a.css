@@ -129,3 +129,31 @@ section.empty { text-align: center; margin: 3rem 0; display: flex; flex-directio
   gap: 0.6rem;
   padding: 1.5rem;
 }
+
+/* kanban board */
+.board {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+.kanban-col {
+  flex: 0 0 19rem;
+  min-width: 19rem;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0.8rem;
+}
+.kanban-col h2 {
+  margin-bottom: 0.6rem;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.kanban-col ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}

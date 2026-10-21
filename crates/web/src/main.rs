@@ -688,27 +688,34 @@ pub fn app() -> Html {
                         let refresh_status = refresh_status.clone();
                         Callback::from(move |_| refresh_status.emit(()))
                     };
-                    let backlog = s
-                        .backlog
-                        .iter()
-                        .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
-                        .collect::<Html>();
-                    let contexts = s
-                        .contexts
-                        .iter()
-                        .map(|c| {
-                            let tasks = c
-                                .tasks
+
+                    // one kanban column: a title with the card count, and
+                    // the task cards (done ones sink to the bottom)
+                    let column = |title: String, tasks: Vec<TaskView>| -> Html {
+                        let mut tasks = tasks;
+                        tasks.sort_by_key(|t| t.done);
+                        let count = tasks.len();
+                        let cards = tasks
+                            .iter()
+                            .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
+                            .collect::<Html>();
+                        html! {
+                            <section class="kanban-col card bg-base-200">
+                                <h2>
+                                    { title }
+                                    <span class="count badge badge-sm badge-ghost">{ count }</span>
+                                </h2>
+                                <ul>{ cards }</ul>
+                            </section>
+                        }
+                    };
+
+                    let columns = std::iter::once(column("backlog".to_string(), s.backlog.clone()))
+                        .chain(
+                            s.contexts
                                 .iter()
-                                .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
-                                .collect::<Html>();
-                            html! {
-                                <section class="context">
-                                    <h2>{ format!("context: {}", c.name) }</h2>
-                                    <ul>{ tasks }</ul>
-                                </section>
-                            }
-                        })
+                                .map(|c| column(c.name.clone(), c.tasks.clone())),
+                        )
                         .collect::<Html>();
 
                     html! {
@@ -718,11 +725,9 @@ pub fn app() -> Html {
                                 <button class="btn btn-sm" onclick={on_refresh}>{ "refresh" }</button>
                             </div>
                             <AddForm token={t.clone()} repo_id={id} contexts={ctx_names} on_refresh={refresh_status.clone()} />
-                            <section class="backlog">
-                                <h2>{ "backlog" }</h2>
-                                <ul>{ backlog }</ul>
-                            </section>
-                            { contexts }
+                            <div class="board">
+                                { columns }
+                            </div>
                         </>
                     }
                 }
