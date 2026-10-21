@@ -43,6 +43,7 @@
 91a2227fbb69156f26f49f62a9ca0fb38c8219d6:
 	[ ] board kanban horizontal: une colonne par contexte, backlog en premier
 	[ ] colonnes scrollables, cartes task existantes (plan cliquable), done en bas
+	[ ] build trunk + smoke serveur + suite verte
 a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] refactor: les clones du server deviennent des miroirs bare (git clone --mirror), le worktree tod est cree depuis le bare, Store supporte une racine bare
 	[x] sync: git remote update --prune avant chaque usage + relai push miroir vers origin apres un receive
