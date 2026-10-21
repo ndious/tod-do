@@ -72,6 +72,31 @@ pub struct RepoView {
     pub url: String,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DiffResp {
+    #[serde(default)]
+    pub stat: String,
+    #[serde(default)]
+    pub diff: String,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// Percent-encode a value for a query string (branch names are slugs,
+/// but they can carry accents).
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 // ---------- api helpers ----------
 
 // ---------- token persistence ----------
@@ -280,6 +305,41 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
     let task = &props.task;
     let new_step = use_state(String::new);
 
+    // the diff of the task's branch, loaded on demand
+    #[derive(Clone)]
+    enum DiffView {
+        Hidden,
+        Loading,
+        Shown(DiffResp),
+        Failed(String),
+    }
+    let diff_view = use_state(|| DiffView::Hidden);
+
+    let on_toggle_diff = {
+        let token = props.token.clone();
+        let repo_id = props.repo_id;
+        let branch = task.context.clone();
+        let diff_view = diff_view.clone();
+        Callback::from(move |_| {
+            // shown? a second click hides it again
+            if let DiffView::Shown(_) = &*diff_view {
+                diff_view.set(DiffView::Hidden);
+                return;
+            }
+            diff_view.set(DiffView::Loading);
+            let (token, branch, diff_view) = (token.clone(), branch.clone(), diff_view.clone());
+            spawn_local(async move {
+                let path = format!("/api/repos/{repo_id}/diff?branch={}", urlencode(&branch));
+                match api_get::<DiffResp>(&token, &path).await {
+                    ApiOutcome::Ok(d) => diff_view.set(DiffView::Shown(d)),
+                    ApiOutcome::Unauthorized | ApiOutcome::Failed => {
+                        diff_view.set(DiffView::Failed("cannot load the diff".to_string()))
+                    }
+                }
+            });
+        })
+    };
+
     // Escape closes the overlay
     {
         let on_close = props.on_close.clone();
@@ -384,6 +444,48 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                     />
                     <button type="submit" class="btn btn-sm">{ "+" }</button>
                 </form>
+                if task.context != "backlog" {
+                    <button class="btn btn-ghost btn-xs" onclick={on_toggle_diff.clone()}>
+                        { match (*diff_view).clone() {
+                            DiffView::Hidden => "show diff".to_string(),
+                            DiffView::Loading => "loading…".to_string(),
+                            DiffView::Shown(_) => "hide diff".to_string(),
+                            DiffView::Failed(_) => "show diff".to_string(),
+                        } }
+                    </button>
+                }
+                { match (*diff_view).clone() {
+                    DiffView::Hidden => html! {},
+                    DiffView::Loading => html! { <p class="meta">{ "loading diff…" }</p> },
+                    DiffView::Failed(e) => html! { <p class="error">{ e }</p> },
+                    DiffView::Shown(d) => {
+                        let lines = d
+                            .diff
+                            .lines()
+                            .map(|l| {
+                                let class = if l.starts_with('+') {
+                                    "add"
+                                } else if l.starts_with('-') {
+                                    "del"
+                                } else if l.starts_with('@') {
+                                    "hunk"
+                                } else {
+                                    "ctx"
+                                };
+                                html! { <span class={class}>{ format!("{l}\n") }</span> }
+                            })
+                            .collect::<Html>();
+                        html! {
+                            <>
+                                <pre class="stat">{ d.stat }</pre>
+                                if d.truncated {
+                                    <p class="meta">{ "diff truncated at 256 KiB" }</p>
+                                }
+                                <pre class="diff">{ lines }</pre>
+                            </>
+                        }
+                    }
+                } }
                 <div class="modal-action">
                     <button class="btn btn-sm" onclick={on_close}>{ "close" }</button>
                 </div>

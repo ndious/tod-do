@@ -8,6 +8,7 @@ use crate::{
 };
 use loco_rs::prelude::*;
 use loco_rs::controller::extractor::auth::JWTWithUser;
+use axum::extract::Query;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -34,6 +35,12 @@ pub struct SubStepParams {
 pub struct CheckStepParams {
     pub uid: String,
     pub number: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiffParams {
+    pub branch: String,
+    pub base: Option<String>,
 }
 
 /// Open the store of a registered repository (mirror refresh first).
@@ -196,6 +203,25 @@ async fn check_step(
     format::json(task_views::task_view(&task, &context, &project))
 }
 
+/// The code changes of a task's branch (its context) compared to a
+/// base branch — `main` by default.
+#[debug_handler]
+async fn diff(
+    _auth: JWTWithUser<users::Model>,
+    State(ctx): State<AppContext>,
+    Path(id): Path<i64>,
+    Query(params): Query<DiffParams>,
+) -> Result<Response> {
+    let repo = find_repo(&ctx, id).await?;
+    let settings = Settings::from_ctx(&ctx)?;
+    let root = crate::repos::prepare(&repo, &PathBuf::from(settings.workdir))
+        .map_err(|e| Error::string(&format!("cannot prepare repository: {e:#}")))?;
+    let base = params.base.as_deref().unwrap_or("main");
+    let d = crate::repos::diff(&root, base, params.branch.trim())
+        .map_err(|e| Error::BadRequest(format!("cannot diff: {e:#}")))?;
+    format::json(d)
+}
+
 /// Regenerate the spec markdown, but only if it already exists.
 fn refresh_brief(
     store: &dot::store::Store,
@@ -217,6 +243,7 @@ pub fn routes() -> Routes {
         .add("/", post(add))
         .add("/{id}", delete(delete_repo))
         .add("/{id}/status", get(status))
+        .add("/{id}/diff", get(diff))
         .add("/{id}/task", post(add_task))
         .add("/{id}/sub", post(add_sub))
         .add("/{id}/check", post(check_step))

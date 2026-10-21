@@ -118,6 +118,46 @@ pub fn create_bare(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The changes a branch carries on top of a base branch, for the
+/// console's task detail. The unified diff is truncated so a single
+/// response stays a sane payload for the browser.
+#[derive(Debug, serde::Serialize)]
+pub struct BranchDiff {
+    pub stat: String,
+    pub diff: String,
+    pub truncated: bool,
+}
+
+/// Size cap of the diff payload.
+const DIFF_MAX_BYTES: usize = 256 * 1024;
+
+/// Compare `branch` to `base` (both must exist): a per-file summary
+/// and the unified diff, truncated at DIFF_MAX_BYTES.
+pub fn diff(root: &Path, base: &str, branch: &str) -> Result<BranchDiff> {
+    if !dot::git::branch_exists(root, branch)? {
+        bail!("branch {branch} does not exist");
+    }
+    let range = format!("{base}...{branch}");
+    let stat = git(Some(root), &["diff", "--stat", &range])?;
+    let full = git(Some(root), &["diff", &range])?;
+    let truncated = full.len() > DIFF_MAX_BYTES;
+    let diff = if truncated {
+        // never cut in the middle of a line or a character
+        let mut end = DIFF_MAX_BYTES.min(full.len());
+        while !full.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut cut = full[..end].to_string();
+        if let Some(idx) = cut.rfind('\n') {
+            cut.truncate(idx + 1);
+        }
+        cut
+    } else {
+        full
+    };
+    Ok(BranchDiff { stat, diff, truncated })
+}
+
 /// Relay the mirror's refs to the repository's origin: everything a
 /// client pushed to the server, or the server committed itself, is
 /// forwarded so the original repository stays up to date. Mirror
@@ -173,6 +213,29 @@ mod tests {
         store.init().unwrap();
         store.add_in(None, "origin task", "tester").unwrap();
         dir
+    }
+
+    #[test]
+    fn diff_shows_the_branch_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        git(Some(dir.path()), &["init", "-b", "main"]).unwrap();
+        git(Some(dir.path()), &["config", "user.email", "t@t"]).unwrap();
+        git(Some(dir.path()), &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one").unwrap();
+        git(Some(dir.path()), &["add", "-A"]).unwrap();
+        git(Some(dir.path()), &["commit", "-m", "init"]).unwrap();
+        git(Some(dir.path()), &["checkout", "-b", "feat"]).unwrap();
+        std::fs::write(dir.path().join("b.txt"), "two").unwrap();
+        git(Some(dir.path()), &["add", "-A"]).unwrap();
+        git(Some(dir.path()), &["commit", "-m", "feat"]).unwrap();
+
+        let d = diff(dir.path(), "main", "feat").unwrap();
+        assert!(d.stat.contains("b.txt"));
+        assert!(d.diff.contains("+two"));
+        assert!(!d.truncated);
+
+        // an unknown branch is an error, not a panic
+        assert!(diff(dir.path(), "main", "nope").is_err());
     }
 
     #[test]
