@@ -64,7 +64,7 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] decision consignee: transport = russh + exec git-upload-pack/receive-pack (le binaire git gere le protocole, gitoxide n'a pas de serveur); gitserver-http reserve a un futur transport HTTP
 ad64a1e2feadac8a418755e1c2144109c57a2f02:
 	[x] start: branche depuis main (--base pour empiler)
-	[ ] x: cloturer depuis n'importe quelle branche
+	[x] x: cloturer depuis n'importe quelle branche
 	[ ] rfr: etat ready-for-review + push de la branche + badge web
 	[ ] finish: rebase sur main + ff-merge + suppression branche + resolve contexte
 	[ ] README workflow + build + tests + smoke
