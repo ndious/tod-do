@@ -22,6 +22,7 @@
 	[x] README/SKILL.md + smoke test multi-contextes
 286499b0a60792accee18ff80c31db4e56624552:
 	[ ] etape 1
+	[ ] etape 2
 44a680cc4a6d9e518cb04f55d18adae74eee22b1:
 	[x] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
 	[x] overlay TaskDetail: description, meta, plan cliquable, ajout de step, fermeture (bouton, fond, Escape)
