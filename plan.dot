@@ -28,6 +28,8 @@
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
 	[x] cli: commande start avec --branch optionnel, help, README, SKILL.md
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
+53ac2da61503c5e48268370f34a75ff0ddf70c23:
+	[ ] serveur: clone_url dans l'API repos (host du header Host + port ssh des settings)
 6d3c06a64acbe9cb5b834f61b31e535b98ee352b:
 	[x] server: POST /api/repos url vide -> creation bare + branches main/tod (commit orphelin) + worktree tod
 	[x] repos.rs: prepare/relay tolerent un repository sans origin
