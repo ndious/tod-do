@@ -64,6 +64,7 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 	[x] decision consignee: transport = russh + exec git-upload-pack/receive-pack (le binaire git gere le protocole, gitoxide n'a pas de serveur); gitserver-http reserve a un futur transport HTTP
 b0f2c8d0d0d63b7b5f7532d0163c22e4bf0491d1:
 	[ ] spawn_push: retry jusqu'a 5 fois avec backoff quand le push de fond est rejete (course)
+	[ ] sync_pull: warning unpushed seulement si aucun push lance dans les 60 dernieres secondes (marqueur mtime)
 d121053de1b1fd3df9374ac51f48313add2f9734:
 	[x] cli: CompleteEnv + candidats d'ids dynamiques (x/rm/mv/start/brief/sub/check)
 	[x] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh
