@@ -21,7 +21,7 @@
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
 6d3c06a64acbe9cb5b834f61b31e535b98ee352b:
 	[x] server: POST /api/repos url vide -> creation bare + branches main/tod (commit orphelin) + worktree tod
-	[ ] repos.rs: prepare/relay tolerent un repository sans origin
+	[x] repos.rs: prepare/relay tolerent un repository sans origin
 	[ ] console: URL vide = creation d'un nouveau repository + selection auto
 	[ ] smoke: creation via API + clone SSH + push + todos visibles + suite verte + README
 70bb008ca0f646ba2a8e5d52bdb686eb0e4d811c:
