@@ -21,6 +21,7 @@
 	[x] tests: move_task_to, slug, start end-to-end + suite verte
 6d3c06a64acbe9cb5b834f61b31e535b98ee352b:
 	[ ] server: POST /api/repos url vide -> creation bare + branches main/tod (commit orphelin) + worktree tod
+	[ ] repos.rs: prepare/relay tolerent un repository sans origin
 70bb008ca0f646ba2a8e5d52bdb686eb0e4d811c:
 	[x] POC: installer le CLI loco, generer une app api-only sqlite, valider son integration dans le workspace a la place de crates/server
 	[x] scaffold: config yaml (dev/prod), cycle de vie Loco, modules git conserves (repos.rs, ssh.rs) en attente de branchage
