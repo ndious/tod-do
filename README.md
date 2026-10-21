@@ -100,7 +100,9 @@ API (all task endpoints are scoped per repository and need the
 
 - `POST /api/login {username, password}` → `{token}`
 - `GET /api/repos` — list managed repositories
-- `POST /api/repos {name, url}` — register + clone a repository
+- `POST /api/repos {name, url}` — register an existing repository (clone + validate)
+- `POST /api/repos {name, url: ""}` — **create** a new repository here (like GitHub),
+  immediately clonable over SSH and tod-ready
 - `DELETE /api/repos/:id` — unregister (the clone stays on disk)
 - `GET /api/repos/:id/status` — branch, backlog, contexts, plans, progress
 - `POST /api/repos/:id/task {description, context}`
@@ -136,9 +138,12 @@ updates the server's own task view immediately.
 
 ### Web console (Yew)
 
-The console is a Yew 0.21 CSR app in `crates/web`: login screen,
-repository selector, repository registration, task board with
-clickable plans. Build it once with [Trunk](https://trunkrs.dev):
+The console is a Yew 0.21 CSR app in `crates/web`, styled with
+[daisyUI](https://daisyui.com) (vendored full CSS, no npm in the
+build): login screen, then a header navbar and hash-based pages —
+repository list (`#/`), dedicated repository creation page (`#/new`),
+and a full task board per repository (`#/repo/{id}`) with clickable
+plans. Build it once with [Trunk](https://trunkrs.dev):
 
 ```bash
 rustup target add wasm32-unknown-unknown
