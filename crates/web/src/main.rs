@@ -70,6 +70,8 @@ pub struct RepoView {
     pub name: String,
     #[serde(default)]
     pub url: String,
+    #[serde(default)]
+    pub clone_url: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -287,6 +289,48 @@ fn find_task(status: &Status, uid: &str) -> Option<TaskView> {
         .chain(status.contexts.iter().flat_map(|c| c.tasks.iter()))
         .find(|t| t.uid == uid)
         .cloned()
+}
+
+/// Copy text to the system clipboard (nothing happens when the
+/// browser refuses, e.g. insecure context).
+fn copy_to_clipboard(text: &str) {
+    if let Some(window) = web_sys::window() {
+        let _ = window.navigator().clipboard().write_text(text);
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct CloneBarProps {
+    pub clone_url: String,
+}
+
+/// The clone address of a repository, ready to copy-paste.
+#[function_component(CloneBar)]
+pub fn clone_bar(props: &CloneBarProps) -> Html {
+    let copied = use_state(|| false);
+
+    let onclick = {
+        let url = props.clone_url.clone();
+        let copied = copied.clone();
+        Callback::from(move |_| {
+            copy_to_clipboard(&url);
+            copied.set(true);
+        })
+    };
+
+    html! {
+        <div class="clone">
+            <input
+                type="text"
+                class="input input-bordered input-sm font-mono"
+                readonly={true}
+                value={props.clone_url.clone()}
+            />
+            <button class="btn btn-sm" {onclick}>
+                { if *copied { "copied" } else { "copy" } }
+            </button>
+        </div>
+    }
 }
 
 #[derive(Properties, PartialEq)]
@@ -907,10 +951,20 @@ pub fn app() -> Html {
                     // every render: a checked step updates it live
                     let detail = (*selected).clone().and_then(|uid| find_task(&s, &uid));
 
+                    // the clone address of the repository shown
+                    let clone_url = (*repos)
+                        .iter()
+                        .find(|r| r.id == id)
+                        .map(|r| r.clone_url.clone())
+                        .unwrap_or_default();
+
                     html! {
                         <>
                             <div class="bar">
                                 <p class="meta">{ format!("{} — branch {}", if s.repo.is_empty() { "?" } else { s.repo.as_str() }, s.branch) }</p>
+                                if !clone_url.is_empty() {
+                                    <CloneBar clone_url={clone_url} />
+                                }
                                 <button class="btn btn-sm" onclick={on_refresh}>{ "refresh" }</button>
                             </div>
                             <AddForm token={t.clone()} repo_id={id} contexts={ctx_names} on_refresh={refresh_status.clone()} />

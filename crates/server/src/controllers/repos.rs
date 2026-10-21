@@ -4,6 +4,7 @@
 use crate::{
     models::{repos, users},
     settings::Settings,
+    views::repos::RepoView,
     views::tasks::{self as task_views, Status},
 };
 use loco_rs::prelude::*;
@@ -63,11 +64,35 @@ async fn find_repo(ctx: &AppContext, id: i64) -> Result<repos::Model> {
         .ok_or_else(|| Error::NotFound)
 }
 
+/// The host the client addressed, without its HTTP port: the SSH
+/// clone URLs are rebuilt from it and the SSH port of the settings.
+fn host_of(headers: &axum::http::HeaderMap) -> String {
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("localhost");
+    match host.rsplit_once(':') {
+        // strip the http port, keeping ipv6 brackets intact
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h.to_string(),
+        _ => host.to_string(),
+    }
+}
+
 /// List the managed repositories.
 #[debug_handler]
-async fn list(_auth: JWTWithUser<users::Model>, State(ctx): State<AppContext>) -> Result<Response> {
+async fn list(
+    _auth: JWTWithUser<users::Model>,
+    State(ctx): State<AppContext>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response> {
+    let settings = Settings::from_ctx(&ctx)?;
+    let host = host_of(&headers);
     let list = repos::Entity::find().all(&ctx.db).await?;
-    format::json(list)
+    let views: Vec<RepoView> = list
+        .iter()
+        .map(|r| RepoView::of(r, &host, settings.ssh_port))
+        .collect();
+    format::json(views)
 }
 
 /// Register a repository, mirroring it immediately so a bad URL is
@@ -76,6 +101,7 @@ async fn list(_auth: JWTWithUser<users::Model>, State(ctx): State<AppContext>) -
 async fn add(
     _auth: JWTWithUser<users::Model>,
     State(ctx): State<AppContext>,
+    headers: axum::http::HeaderMap,
     Json(params): Json<AddRepoParams>,
 ) -> Result<Response> {
     let name = params.name.trim();
@@ -102,7 +128,9 @@ async fn add(
         return Err(e);
     }
 
-    format::json(repo)
+    let settings = Settings::from_ctx(&ctx)?;
+    let host = host_of(&headers);
+    format::json(RepoView::of(&repo, &host, settings.ssh_port))
 }
 
 /// Unregister a repository (the mirror stays on disk).

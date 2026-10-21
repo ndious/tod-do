@@ -171,3 +171,13 @@ pre.diff {
 .diff .add { color: var(--color-success, #86efac); }
 .diff .del { color: var(--color-error, #f87171); }
 .diff .hunk { color: var(--color-info, #93c5fd); opacity: 0.8; }
+
+/* clone bar */
+.clone {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 16rem;
+  max-width: 28rem;
+}
+.clone input[type="text"] { flex: 1; }
