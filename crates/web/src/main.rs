@@ -226,27 +226,169 @@ async fn api_post(token: &str, path: &str, body: &serde_json::Value) -> bool {
 
 #[derive(Properties, PartialEq)]
 pub struct TaskCardProps {
-    pub token: String,
-    pub repo_id: i64,
     pub task: TaskView,
-    pub on_refresh: Callback<()>,
+    pub on_open: Callback<TaskView>,
 }
 
 #[function_component(TaskCard)]
 pub fn task_card(props: &TaskCardProps) -> Html {
     let task = &props.task;
 
+    let onclick = {
+        let on_open = props.on_open.clone();
+        let task = props.task.clone();
+        Callback::from(move |_| on_open.emit(task.clone()))
+    };
+
     let class = if task.done { "task done card bg-base-100" } else { "task card bg-base-100" };
     let short = &task.uid[..task.uid.len().min(7)];
 
     html! {
-        <li class={class}>
+        <li class={class} {onclick}>
             <span class="desc">{ task.description.clone() }</span>
             <span class="uid badge badge-ghost badge-sm font-mono">{ short }</span>
             if !task.plan.is_empty() {
                 <span class="badge badge-primary badge-sm">{ format!("{}/{}", task.progress.0, task.progress.1) }</span>
             }
         </li>
+    }
+}
+
+/// Look a task up in the project status by its identifier.
+fn find_task(status: &Status, uid: &str) -> Option<TaskView> {
+    status
+        .backlog
+        .iter()
+        .chain(status.contexts.iter().flat_map(|c| c.tasks.iter()))
+        .find(|t| t.uid == uid)
+        .cloned()
+}
+
+#[derive(Properties, PartialEq)]
+pub struct TaskDetailProps {
+    pub token: String,
+    pub repo_id: i64,
+    pub task: TaskView,
+    pub on_close: Callback<()>,
+    pub on_refresh: Callback<()>,
+}
+
+/// The overlay opened by a click on a task card: the full task
+/// detail, with its plan (steps can be checked, new ones added).
+#[function_component(TaskDetail)]
+pub fn task_detail(props: &TaskDetailProps) -> Html {
+    let task = &props.task;
+    let new_step = use_state(String::new);
+
+    // Escape closes the overlay
+    {
+        let on_close = props.on_close.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window().expect("no window");
+            let on_close = on_close.clone();
+            let on_key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+                if e.key() == "Escape" {
+                    on_close.emit(());
+                }
+            });
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("cannot listen to keydown");
+            move || {
+                let _ = window.remove_event_listener_with_callback(
+                    "keydown",
+                    on_key.as_ref().unchecked_ref(),
+                );
+            }
+        });
+    }
+
+    let on_check = {
+        let token = props.token.clone();
+        let path = format!("/api/repos/{}/check", props.repo_id);
+        let uid = task.uid.clone();
+        let on_refresh = props.on_refresh.clone();
+        Callback::from(move |n: usize| {
+            let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
+            let on_refresh = on_refresh.clone();
+            spawn_local(async move {
+                let body = serde_json::json!({ "uid": uid, "number": n });
+                api_post(&token, &path, &body).await;
+                on_refresh.emit(());
+            });
+        })
+    };
+
+    let steps = task
+        .plan
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let n = i + 1;
+            let on_check = on_check.clone();
+            let onclick = Callback::from(move |_| on_check.emit(n));
+            let class = if s.done { "step done" } else { "step" };
+            html! {
+                <li class={class} {onclick}>
+                    <input type="checkbox" class="checkbox checkbox-xs" checked={s.done} />
+                    <span>{ s.text.clone() }</span>
+                </li>
+            }
+        })
+        .collect::<Html>();
+
+    let on_submit_step = {
+        let token = props.token.clone();
+        let path = format!("/api/repos/{}/sub", props.repo_id);
+        let uid = task.uid.clone();
+        let new_step = new_step.clone();
+        let on_refresh = props.on_refresh.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let text = (*new_step).clone();
+            if text.trim().is_empty() {
+                return;
+            }
+            let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
+            let on_refresh = on_refresh.clone();
+            spawn_local(async move {
+                let body = serde_json::json!({ "uid": uid, "text": text });
+                api_post(&token, &path, &body).await;
+                on_refresh.emit(());
+            });
+        })
+    };
+
+    let on_close = {
+        let on_close = props.on_close.clone();
+        Callback::from(move |_| on_close.emit(()))
+    };
+
+    let short = &task.uid[..task.uid.len().min(7)];
+
+    html! {
+        <div class="modal modal-open" onclick={on_close.clone()}>
+            <div class="modal-box" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                <h3 class="text-lg font-bold">{ task.description.clone() }</h3>
+                <p class="meta">
+                    { format!("{} — context: {} — by {}", short, task.context, task.author) }
+                </p>
+                <ol class="plan">{ steps }</ol>
+                <form class="sub" onsubmit={on_submit_step}>
+                    <input
+                        type="text"
+                        class="input input-bordered input-sm"
+                        placeholder="new micro todo…"
+                        value={(*new_step).clone()}
+                        oninput={Callback::from(move |e: InputEvent| new_step.set(input_value(e)))}
+                    />
+                    <button type="submit" class="btn btn-sm">{ "+" }</button>
+                </form>
+                <div class="modal-action">
+                    <button class="btn btn-sm" onclick={on_close}>{ "close" }</button>
+                </div>
+            </div>
+        </div>
     }
 }
 
@@ -385,6 +527,8 @@ pub fn app() -> Html {
     let status = use_state(Status::default);
     let error = use_state(String::new);
     let route = use_state(current_route);
+    // the task whose detail overlay is open, by identifier
+    let selected = use_state(|| None::<String>);
     // the new-repository form state, used by the creation page
     let new_repo_name = use_state(String::new);
     let new_repo_url = use_state(String::new);
@@ -619,6 +763,15 @@ pub fn app() -> Html {
                         Callback::from(move |_| refresh_status.emit(()))
                     };
 
+                    let on_open = {
+                        let selected = selected.clone();
+                        Callback::from(move |task: TaskView| selected.set(Some(task.uid.clone())))
+                    };
+                    let on_close = {
+                        let selected = selected.clone();
+                        Callback::from(move |_| selected.set(None))
+                    };
+
                     // one kanban column: a title with the card count, and
                     // the task cards (done ones sink to the bottom)
                     let column = |title: String, tasks: Vec<TaskView>| -> Html {
@@ -627,7 +780,7 @@ pub fn app() -> Html {
                         let count = tasks.len();
                         let cards = tasks
                             .iter()
-                            .map(|task| html! { <TaskCard token={t.clone()} repo_id={id} task={task.clone()} on_refresh={refresh_status.clone()} /> })
+                            .map(|task| html! { <TaskCard task={task.clone()} on_open={on_open.clone()} /> })
                             .collect::<Html>();
                         html! {
                             <section class="kanban-col card bg-base-200">
@@ -648,6 +801,10 @@ pub fn app() -> Html {
                         )
                         .collect::<Html>();
 
+                    // the overlay task is looked up in the fresh status on
+                    // every render: a checked step updates it live
+                    let detail = (*selected).clone().and_then(|uid| find_task(&s, &uid));
+
                     html! {
                         <>
                             <div class="bar">
@@ -658,6 +815,9 @@ pub fn app() -> Html {
                             <div class="board">
                                 { columns }
                             </div>
+                            if let Some(task) = detail {
+                                <TaskDetail token={t.clone()} repo_id={id} task={task} {on_close} on_refresh={refresh_status.clone()} />
+                            }
                         </>
                     }
                 }
