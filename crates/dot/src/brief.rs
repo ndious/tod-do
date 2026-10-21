@@ -82,6 +82,7 @@ mod tests {
             created: Utc::now(),
             updated: Utc::now(),
             done: false,
+            rfr: false,
             content: None,
         }
     }

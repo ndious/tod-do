@@ -133,6 +133,7 @@ fn store_task() -> dot::task::Task {
         created: chrono::Utc::now(),
         updated: chrono::Utc::now(),
         done: false,
+            rfr: false,
         content: None,
     }
 }

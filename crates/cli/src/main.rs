@@ -120,8 +120,14 @@ enum Commands {
         #[arg(short = 'A', long)]
         all_contexts: bool,
     },
-    /// Mark a task as complete (current context only)
+    /// Mark a task as complete, wherever it lives
     X {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+    },
+    /// Mark a task as ready for review and push its branch
+    Rfr {
         /// Full or partial task identifier
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
@@ -152,6 +158,16 @@ enum Commands {
         /// Branch name (default: derived from the task description)
         #[arg(short, long, value_name = "NAME")]
         branch: Option<String>,
+        /// Branch created from this branch instead of main
+        #[arg(short, long, value_name = "BRANCH")]
+        base: Option<String>,
+    },
+    /// Finish the current task: rebase it, merge it into main,
+    /// delete the branch and close the context
+    Finish {
+        /// The base branch to merge into
+        #[arg(short, long, value_name = "BRANCH", default_value = "main")]
+        base: String,
     },
     /// List contexts (branches) that still hold todos
     Ctx,
@@ -187,9 +203,11 @@ fn main() -> Result<()> {
         Commands::Status => commands::status(),
         Commands::Ls { backlog, all, all_contexts } => commands::ls(backlog, all, all_contexts),
         Commands::X { identifier } => commands::done(&identifier),
+        Commands::Rfr { identifier } => commands::rfr(&identifier),
         Commands::Rm { backlog, identifier } => commands::rm(&identifier, backlog),
         Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
-        Commands::Start { identifier, branch } => commands::start(&identifier, branch),
+        Commands::Start { identifier, branch, base } => commands::start(&identifier, branch, base.as_deref()),
+        Commands::Finish { base } => commands::finish(&base),
         Commands::Ctx => commands::ctx(),
         Commands::Resolve { context } => commands::resolve(&context),
         Commands::Export { output } => commands::export(&output),

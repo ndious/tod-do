@@ -266,15 +266,32 @@ tod brief 919fe            # the agent-facing brief
 tod status                 # project overview with progress
 tod ls / ls -b             # todos left to do (-a: also the done ones)
 tod ls -A                   # every context (same filters)
-tod x 919fe                # mark task complete
+tod x 919fe                # mark task complete (from anywhere)
+tod rfr 919fe              # ready for review + push the work branch
 tod rm 919fe / rm -b       # delete (also cleans plan + brief)
 tod mv 919fe / mv -b       # backlog <-> context
-tod start 919fe            # create a work branch for a task and move it there
+tod start 919fe            # work branch for a task (from main, --base to stack)
+tod finish                 # rebase + ff-merge into main, delete branch, close context
 tod ctx                    # contexts with todos
 tod resolve feature/login  # close a context
 tod export todos.json      # export the whole database
 tod completions bash       # shell completion script (bash, zsh, fish…)
 ```
+
+### Task lifecycle
+
+```
+plan/add -> start -> work -> rfr -> review (web console) -> finish
+```
+
+`start` creates the working branch **from `main`** — tasks are
+independent by default; `--base <branch>` stacks one on another
+when it must. `rfr` marks the task ready for review and pushes its
+branch to origin (the web console shows the diff of pushed
+branches). `finish` rebases the branch on the base, merges it
+fast-forward only, deletes the merged branch and resolves its
+context. `x` closes a task from anywhere, whatever branch you are
+on.
 
 ## Differences with tod-cli
 

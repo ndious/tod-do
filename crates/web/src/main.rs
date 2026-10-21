@@ -40,6 +40,8 @@ pub struct TaskView {
     pub description: String,
     pub author: String,
     pub done: bool,
+    #[serde(default)]
+    pub rfr: bool,
     pub context: String,
     pub plan: Vec<StepView>,
     pub progress: (usize, usize),
@@ -274,6 +276,9 @@ pub fn task_card(props: &TaskCardProps) -> Html {
         <li class={class} {onclick}>
             <span class="desc">{ task.description.clone() }</span>
             <span class="uid badge badge-ghost badge-sm font-mono">{ short }</span>
+            if task.rfr && !task.done {
+                <span class="badge badge-warning badge-sm">{ "rfr" }</span>
+            }
             if !task.plan.is_empty() {
                 <span class="badge badge-primary badge-sm">{ format!("{}/{}", task.progress.0, task.progress.1) }</span>
             }
@@ -475,7 +480,7 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
             <div class="modal-box" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
                 <h3 class="text-lg font-bold">{ task.description.clone() }</h3>
                 <p class="meta">
-                    { format!("{} — context: {} — by {}", short, task.context, task.author) }
+                    { format!("{} — context: {} — by {}{}", short, task.context, task.author, if task.rfr { " — ready for review" } else { "" }) }
                 </p>
                 <ol class="plan">{ steps }</ol>
                 <form class="sub" onsubmit={on_submit_step}>

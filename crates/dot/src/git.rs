@@ -119,6 +119,28 @@ pub fn create_branch(root: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Switch the working tree to a branch.
+pub fn checkout(root: &Path, branch: &str) -> Result<()> {
+    git(root, &["checkout", branch])
+        .with_context(|| format!("cannot check out '{branch}'"))
+        .map(|_| ())
+}
+
+/// Rebase the current branch onto 'base'. Conflicts stop the
+/// rebase; the user resolves them and runs the command again.
+pub fn rebase(dir: &Path, base: &str) -> Result<()> {
+    git(dir, &["rebase", base])
+        .with_context(|| format!("cannot rebase onto '{base}' (resolve the conflicts, then re-run)"))
+        .map(|_| ())
+}
+
+/// Delete a branch, but only when it is fully merged.
+pub fn delete_branch(root: &Path, branch: &str) -> Result<()> {
+    git(root, &["branch", "-d", branch])
+        .with_context(|| format!("cannot delete branch '{branch}'"))
+        .map(|_| ())
+}
+
 /// Turn a task description into a valid git branch name: lowercase,
 /// words joined with '-', at most 60 characters.
 pub fn branch_slug(description: &str) -> String {

@@ -15,6 +15,7 @@ pub fn task_schema() -> Schema {
         ("created", FieldType::Iso8601),
         ("updated", FieldType::Iso8601),
         ("done", FieldType::Bool),
+        ("rfr", FieldType::Bool),
         ("content", FieldType::Text),
     ])
 }
@@ -28,6 +29,10 @@ pub struct Task {
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
     pub done: bool,
+    /// Ready for review: the work is finished, waiting for a
+    /// review before `tod finish`.
+    #[serde(default)]
+    pub rfr: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
 }
@@ -61,6 +66,10 @@ impl Task {
             Some(Field::Bool(b)) => *b,
             _ => false,
         };
+        let rfr = match doc.get("rfr") {
+            Some(Field::Bool(b)) => *b,
+            _ => false,
+        };
         let content = doc.text("content");
 
         Ok(Task {
@@ -70,6 +79,7 @@ impl Task {
             created,
             updated,
             done,
+            rfr,
             content,
         })
     }
@@ -81,6 +91,7 @@ impl Task {
         doc.set("created", Field::Datetime(self.created));
         doc.set("updated", Field::Datetime(self.updated));
         doc.set("done", Field::Bool(self.done));
+        doc.set("rfr", Field::Bool(self.rfr));
         if let Some(content) = &self.content {
             let lines: Vec<String> =
                 content.split('\n').map(|l| l.to_string()).collect();
@@ -105,6 +116,7 @@ mod tests {
             created: dt,
             updated: dt,
             done: false,
+            rfr: false,
             content: None,
         }
     }

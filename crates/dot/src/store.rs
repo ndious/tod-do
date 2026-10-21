@@ -191,9 +191,10 @@ impl Store {
         Ok(())
     }
 
-    /// Does the repository have an 'origin' remote? Looked up once
-    /// per Store instance.
-    fn has_origin(&self) -> bool {
+    /// Does the repository have an origin remote to sync with?
+    /// Looked up once per Store instance; also used by the CLI to
+    /// decide whether a branch is worth pushing.
+    pub fn has_origin(&self) -> bool {
         if let Some(known) = self.has_origin.get() {
             return known;
         }
@@ -330,6 +331,7 @@ impl Store {
             created: now,
             updated: now,
             done: false,
+            rfr: false,
             content: None,
         };
         let dir = match context {
@@ -393,18 +395,57 @@ impl Store {
     }
 
     /// Mark a task of the current context as complete.
+    /// Mark a task as complete, wherever it lives — the current
+    /// context, another context, or the backlog.
     pub fn complete(&self, identifier: &str) -> Result<Task> {
+        let task = self.mark(identifier, |task| {
+            if task.done {
+                bail!("task #{} is already complete", &task.uid[..5]);
+            }
+            task.done = true;
+            Ok(())
+        })?;
+        self.commit(&format!(
+            "tod: complete {} {}",
+            &task.uid[..7],
+            task.description
+        ))?;
+        Ok(task)
+    }
+
+    /// Mark a task as ready for review, wherever it lives.
+    pub fn ready_for_review(&self, identifier: &str) -> Result<Task> {
+        let task = self.mark(identifier, |task| {
+            if task.done {
+                bail!("task #{} is already complete", &task.uid[..5]);
+            }
+            task.rfr = true;
+            Ok(())
+        })?;
+        self.commit(&format!(
+            "tod: rfr {} {}",
+            &task.uid[..7],
+            task.description
+        ))?;
+        Ok(task)
+    }
+
+    /// Find a task anywhere (backlog or context) and apply a change
+    /// to it, writing it back where it lives.
+    fn mark(
+        &self,
+        identifier: &str,
+        change: impl FnOnce(&mut Task) -> Result<()>,
+    ) -> Result<Task> {
         self.ensure_init()?;
-        let dir = self.context_dir(&self.branch()?);
-        let tasks = load_dir(&dir)?;
-        let mut task = match_task(&tasks, identifier)?.clone();
-        if task.done {
-            bail!("task #{} is already complete", &task.uid[..5]);
-        }
-        task.done = true;
+        let (context, mut task) = self.find_task(identifier)?;
+        change(&mut task)?;
         task.updated = chrono::Utc::now();
+        let dir = match context.as_str() {
+            "backlog" => self.backlog_dir(),
+            context => self.context_dir(context),
+        };
         write_task(&dir, &task)?;
-        self.commit(&format!("tod: complete {} {}", &task.uid[..7], task.description))?;
         Ok(task)
     }
 
@@ -631,6 +672,7 @@ mod tests {
             created: chrono::Utc::now(),
             updated: chrono::Utc::now(),
             done: false,
+            rfr: false,
             content: None,
         };
         let tasks = vec![mk("abcdef1234"), mk("abz4567890")];
@@ -714,9 +756,18 @@ mod tests {
         assert!(log.contains("tod: init"));
         assert!(log.contains(&format!("tod: add {}", &task.uid[..7])));
 
-        store.complete(&task.uid[..7]).unwrap_err(); // not in the current context
-        store.load_backlog().unwrap();
-        assert_eq!(store.load_backlog().unwrap().len(), 1);
+        // complete works from anywhere: a backlog task is completed
+        // without switching context
+        let done = store.complete(&task.uid[..7]).unwrap();
+        assert!(done.done && !done.rfr);
+        assert!(store.load_backlog().unwrap()[0].done);
+
+        // ready for review too, and a second complete fails
+        let other = store.add_in(None, "another task", "tester").unwrap();
+        let reviewed = store.ready_for_review(&other.uid[..7]).unwrap();
+        assert!(reviewed.rfr && !reviewed.done);
+        assert!(store.complete(&other.uid[..7]).unwrap().done);
+        store.complete(&other.uid[..7]).unwrap_err(); // already complete
     }
 
     #[test]

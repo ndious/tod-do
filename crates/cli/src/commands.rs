@@ -186,7 +186,7 @@ pub fn status() -> Result<()> {
             return;
         }
         for task in tasks {
-            let mark = if task.done { 'x' } else { ' ' };
+            let mark = if task.done { 'x' } else if task.rfr { 'r' } else { ' ' };
             let progress = match project.plan(&task.uid) {
                 Some(plan) if !plan.is_empty() => {
                     format!(" [{} {}]", plan.done_count(), plan.steps.len())
@@ -220,7 +220,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
 
     let print_list = |tasks: &[Task]| {
         for task in tasks {
-            let mark = if task.done { "[x]" } else { "[ ]" };
+            let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
             println!("{mark} #{}  {}", &task.uid[..5], task.description);
         }
     };
@@ -234,7 +234,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
         } else {
             for task in &shown {
                 let created = task.created.format("%Y-%m-%d");
-                let mark = if task.done { "[x]" } else { "[ ]" };
+                let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
                 println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
             }
         }
@@ -268,7 +268,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
         println!("Backlog:");
         for task in &shown {
             let created = task.created.format("%Y-%m-%d");
-            let mark = if task.done { "[x]" } else { "[ ]" };
+            let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
             println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
         }
     } else {
@@ -316,13 +316,15 @@ pub fn mv(identifier: &str, to_backlog: bool) -> Result<()> {
 }
 
 /// Start a task: create a working branch named after it, switch to
-/// it, and make the task belong to that branch.
-pub fn start(identifier: &str, branch: Option<String>) -> Result<()> {
+/// it, and make the task belong to that branch. The branch starts
+/// from 'main' — each task is independent — unless --base says
+/// otherwise.
+pub fn start(identifier: &str, branch: Option<String>, base: Option<&str>) -> Result<()> {
     let store = Store::discover()?;
-    start_in(&store, identifier, branch)
+    start_in(&store, identifier, branch, base.unwrap_or("main"))
 }
 
-fn start_in(store: &Store, identifier: &str, branch: Option<String>) -> Result<()> {
+fn start_in(store: &Store, identifier: &str, branch: Option<String>, base: &str) -> Result<()> {
     store.ensure_init()?;
     let (_context, task) = store.find_task(identifier)?;
 
@@ -337,11 +339,61 @@ fn start_in(store: &Store, identifier: &str, branch: Option<String>) -> Result<(
             }
         }
     };
-    git::create_branch(store.root(), &branch)?;
+    git::create_branch_from(store.root(), &branch, base)?;
+    git::checkout(store.root(), &branch)?;
     store.move_task_to(identifier, &branch)?;
 
     println!(
         "Started #{} {} on branch '{branch}'",
+        &task.uid[..5], task.description
+    );
+    Ok(())
+}
+
+/// Finish the current task: rebase its branch onto the base, merge
+/// it (fast-forward only), delete the branch and close the context
+/// — the whole end-of-task cycle in one command.
+pub fn finish(base: &str) -> Result<()> {
+    let store = Store::discover()?;
+    let root = store.root();
+    let branch = git::current_branch_in(root)?;
+    if branch == base {
+        bail!("nothing to finish: you are on '{base}'");
+    }
+
+    // the work, rebased on the latest base
+    git::rebase(root, base)?;
+    git::checkout(root, base)?;
+    git::merge_ff_only(root, &branch)?;
+
+    // the branch is merged: it can die, and its context with it
+    let tasks = store.load_context(&branch)?;
+    let count = store.resolve(&branch)?;
+    let uids: Vec<String> = tasks.iter().map(|t| t.uid.clone()).collect();
+    forget_task(&store, &uids)?;
+    git::delete_branch(root, &branch)?;
+
+    println!(
+        "Finished '{branch}': merged into '{base}', {count} todo(s) resolved, branch deleted"
+    );
+    Ok(())
+}
+
+/// Mark a task as ready for review and push its working branch, so
+/// the review can happen in the web console.
+pub fn rfr(identifier: &str) -> Result<()> {
+    let store = Store::discover()?;
+    let task = store.ready_for_review(identifier)?;
+
+    // push the branch so the console can show the diff of the work
+    let branch = git::current_branch_in(store.root())?;
+    if branch != "main" && store.has_origin() {
+        println!("Pushing '{branch}' to origin in the background…");
+        git::spawn_push(store.root(), "origin", &branch)?;
+    }
+
+    println!(
+        "Ready for review #{} {}",
         &task.uid[..5], task.description
     );
     Ok(())
@@ -413,8 +465,15 @@ mod tests {
     /// A temp directory with a real git repository and a store on it.
     fn git_repo() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
-        let out = Command::new("git").arg("init").current_dir(dir.path()).output().unwrap();
+        let out = Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
         assert!(out.status.success(), "git init failed");
+        // main must exist: every working branch starts from it
+        std::fs::write(dir.path().join("README.md"), "test\n").unwrap();
+        git::commit_all(dir.path(), "init").unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
         (dir, store)
@@ -426,7 +485,7 @@ mod tests {
         let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
 
         // the branch name comes from the task description
-        start_in(&store, &task.uid[..7], None).unwrap();
+        start_in(&store, &task.uid[..7], None, "main").unwrap();
         assert_eq!(
             git::current_branch_in(dir.path()).unwrap(),
             "fix-the-login-bug"
@@ -436,13 +495,13 @@ mod tests {
 
         // an explicit branch name overrides the slug
         let task2 = store.add_in(None, "Another one", "tester").unwrap();
-        start_in(&store, &task2.uid[..7], Some("custom".into())).unwrap();
+        start_in(&store, &task2.uid[..7], Some("custom".into()), "main").unwrap();
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), "custom");
         assert_eq!(store.load_context("custom").unwrap().len(), 1);
 
         // a useless description falls back to the uid prefix
         let task3 = store.add_in(None, "###", "tester").unwrap();
-        start_in(&store, &task3.uid[..7], None).unwrap();
+        start_in(&store, &task3.uid[..7], None, "main").unwrap();
         assert_eq!(
             git::current_branch_in(dir.path()).unwrap(),
             format!("tod-{}", &task3.uid[..7])
@@ -453,11 +512,11 @@ mod tests {
     fn start_fails_when_the_branch_already_exists() {
         let (dir, store) = git_repo();
         let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
-        start_in(&store, &task.uid[..7], None).unwrap();
+        start_in(&store, &task.uid[..7], None, "main").unwrap();
 
         let task2 = store.add_in(None, "Fix the login bug again", "tester").unwrap();
         // 'fix-the-login-bug-again' is free, but an existing name must fail
-        assert!(start_in(&store, &task2.uid[..7], Some("fix-the-login-bug".into())).is_err());
+        assert!(start_in(&store, &task2.uid[..7], Some("fix-the-login-bug".into()), "main").is_err());
         // nothing moved: the second task is still in the backlog
         assert_eq!(store.load_backlog().unwrap().len(), 1);
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), "fix-the-login-bug");
