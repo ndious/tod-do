@@ -178,11 +178,20 @@ pub fn push(dir: &Path, remote: &str, branch: &str) -> Result<()> {
 
 /// Start a push in the background and return immediately: the
 /// command goes on (or the process exits) while git keeps running.
-/// The child is reaped by a detached thread, so a long-lived server
-/// process never accumulates zombies.
+/// Concurrent pushes of the same branch race on the remote and the
+/// loser is rejected as non-fast-forward, so the child retries a
+/// few times — the next attempt reads the fresh branch tip and
+/// fast-forwards. The child is reaped by a detached thread, so a
+/// long-lived server process never accumulates zombies.
 pub fn spawn_push(dir: &Path, remote: &str, branch: &str) -> Result<()> {
-    let mut child = Command::new("git")
-        .args(["push", "--quiet", remote, branch])
+    let script = format!(
+        "i=0; while [ $i -lt 5 ]; do \
+         git push --quiet {remote} {branch} 2>/dev/null && exit 0; \
+         i=$((i+1)); sleep 1; done; exit 1"
+    );
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(&script)
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

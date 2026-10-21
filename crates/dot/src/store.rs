@@ -226,6 +226,35 @@ impl Store {
             .unwrap_or(false)
     }
 
+    /// File holding the time of the last background push attempt. A
+    /// fresh marker means the unpushed commits are still on their
+    /// way, not stuck. Lives next to the worktree, inside the `.git`
+    /// directory.
+    fn push_marker(&self) -> Option<PathBuf> {
+        self.tod_dir.parent().map(|p| p.join("tod-last-push"))
+    }
+
+    /// Was a background push started within the last 'ttl' seconds?
+    fn pushed_recently(&self, ttl: u64) -> bool {
+        let Some(marker) = self.push_marker() else {
+            return false;
+        };
+        let Ok(modified) = std::fs::metadata(&marker).and_then(|m| m.modified()) else {
+            return false;
+        };
+        modified
+            .elapsed()
+            .map(|e| e.as_secs() < ttl)
+            .unwrap_or(false)
+    }
+
+    /// Remember that a background push is on its way.
+    fn mark_push(&self) {
+        if let Some(marker) = self.push_marker() {
+            let _ = std::fs::File::create(&marker);
+        }
+    }
+
     /// Fetch origin and fast-forward the tod branch before a command
     /// reads or writes it, so every machine works on the latest
     /// todos. The fetch is skipped when the last one is fresher than
@@ -261,12 +290,17 @@ impl Store {
                 )
             })?;
             // commits that a previous background push failed to
-            // flush: warn and start another push in the background
-            if git::ahead_of(&self.tod_dir, &origin_ref, TOD_BRANCH)? > 0 {
+            // flush: when a burst of commands races, the pushes are
+            // still on their way — only complain when none was
+            // started recently
+            if git::ahead_of(&self.tod_dir, &origin_ref, TOD_BRANCH)? > 0
+                && !self.pushed_recently(60)
+            {
                 eprintln!(
                     "warning: the '{TOD_BRANCH}' branch has unpushed commits, retrying the push in the background"
                 );
                 let _ = git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH);
+                self.mark_push();
             }
         }
         // mark the pull as fresh
@@ -474,6 +508,7 @@ impl Drop for Store {
             return;
         }
         let push = if self.async_push.get() {
+            self.mark_push();
             git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH)
         } else {
             git::push(&self.tod_dir, "origin", TOD_BRANCH)
