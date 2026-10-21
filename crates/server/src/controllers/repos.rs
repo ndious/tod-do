@@ -71,16 +71,29 @@ async fn add(
     State(ctx): State<AppContext>,
     Json(params): Json<AddRepoParams>,
 ) -> Result<Response> {
+    let name = params.name.trim();
+    if name.is_empty() || name.contains('/') {
+        return Err(Error::BadRequest("invalid repository name".into()));
+    }
+    if repos::find_by_name(&ctx.db, name).await.is_ok() {
+        return Err(Error::BadRequest("a repository with this name already exists".into()));
+    }
+    // An empty url creates the repository here (like GitHub's "new
+    // repository"); a filled one mirrors an existing one.
     let repo = repos::ActiveModel {
-        name: ActiveValue::set(params.name),
-        url: ActiveValue::set(params.url),
+        name: ActiveValue::set(name.to_string()),
+        url: ActiveValue::set(params.url.trim().to_string()),
         ..Default::default()
     }
     .insert(&ctx.db)
     .await?;
 
-    // validate: mirror + tod branch must be usable
-    open_store(&ctx, &repo).await?;
+    // validate: mirror + tod branch must be usable, or roll the
+    // registration back
+    if let Err(e) = open_store(&ctx, &repo).await {
+        let _ = repos::Entity::delete_by_id(repo.id).exec(&ctx.db).await;
+        return Err(e);
+    }
 
     format::json(repo)
 }

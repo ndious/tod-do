@@ -43,11 +43,28 @@ fn require_tod(root: &Path) -> Result<()> {
 /// original. A mirror keeps every ref (branches, tags, the tod
 /// branch) and accepts pushes on any of them, which a plain clone
 /// with a checked-out branch would refuse.
+/// Does the repository have a remote to sync with? Repositories
+/// created on the server have none: they live here, nothing to
+/// mirror or relay.
+fn has_origin(root: &Path) -> bool {
+    git(Some(root), &["remote"])
+        .map(|remotes| !remotes.trim().is_empty())
+        .unwrap_or(false)
+}
+
 pub fn prepare(repo: &Repo, workdir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(workdir)?;
     let root = workdir.join(format!("{}-{}.git", repo.id, repo.name));
     if root.is_dir() {
-        git(Some(&root), &["remote", "update", "--prune"])?;
+        // created repositories have no origin to sync from
+        if has_origin(&root) {
+            git(Some(&root), &["remote", "update", "--prune"])?;
+        }
+    } else if repo.url.trim().is_empty() {
+        // a repository created here: an empty bare repository with
+        // an initial commit on both main and the tod branch, ready
+        // to be cloned right away
+        create_bare(&root)?;
     } else {
         git(
             None,
@@ -61,17 +78,44 @@ pub fn prepare(repo: &Repo, workdir: &Path) -> Result<PathBuf> {
             Some(&root),
             &["config", "--add", "remote.origin.fetch", "^refs/heads/tod"],
         )?;
-        // Let clients push the tod branch although it is checked out
-        // in the server's worktree: updateInstead refreshes that
-        // worktree when the push lands (it is always clean, the
-        // server commits everything it does).
-        git(
-            Some(&root),
-            &["config", "receive.denyCurrentBranch", "updateInstead"],
-        )?;
     }
+    // Let clients push the tod branch although it is checked out
+    // in the server's worktree: updateInstead refreshes that
+    // worktree when the push lands (it is always clean, the
+    // server commits everything it does).
+    git(
+        Some(&root),
+        &["config", "receive.denyCurrentBranch", "updateInstead"],
+    )?;
     require_tod(&root)?;
     Ok(root)
+}
+
+/// Create an empty bare repository with an initial commit shared by
+/// `main` and the `tod` branch: like GitHub's "new repository",
+/// immediately clonable — and immediately tod-usable.
+pub fn create_bare(root: &Path) -> Result<()> {
+    if root.exists() {
+        bail!("{} already exists", root.display());
+    }
+    git(None, &["init", "--bare", &root.to_string_lossy()])?;
+    let empty_tree = {
+        let out = std::process::Command::new("git")
+            .args(["mktree"])
+            .current_dir(root)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .context("failed to run git mktree")?;
+        if !out.status.success() {
+            bail!("git mktree failed");
+        }
+        String::from_utf8(out.stdout)?.trim().to_string()
+    };
+    let commit = git(Some(root), &["commit-tree", &empty_tree, "-m", "tod: init"])?;
+    git(Some(root), &["update-ref", "refs/heads/main", &commit])?;
+    git(Some(root), &["update-ref", "refs/heads/tod", &commit])?;
+    git(Some(root), &["symbolic-ref", "HEAD", "refs/heads/main"])?;
+    Ok(())
 }
 
 /// Relay the mirror's refs to the repository's origin: everything a
@@ -83,6 +127,10 @@ pub fn prepare(repo: &Repo, workdir: &Path) -> Result<PathBuf> {
 /// (a local checkout, a diverged branch) is reported as a warning
 /// without blocking the others.
 pub fn relay(root: &Path) -> Result<()> {
+    // created repositories live here: nothing to forward upstream
+    if !has_origin(root) {
+        return Ok(());
+    }
     let out = Command::new("git")
         .args(["push", "origin"])
         .current_dir(root)
