@@ -20,6 +20,8 @@
 	[x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
 	[x] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
 	[x] README/SKILL.md + smoke test multi-contextes
+44a680cc4a6d9e518cb04f55d18adae74eee22b1:
+	[ ] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
 509e62949545cbd7b50b1d8ddc71d6b5be7ca690:
 	[x] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
 	[x] git: slug de branche depuis la description + creation/checkout de la branche
