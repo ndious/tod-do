@@ -63,7 +63,7 @@ d121053de1b1fd3df9374ac51f48313add2f9734:
 	[x] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh
 d7d40f6b61169c01b7607972e606a2dd2ab468bc:
 	[x] endpoint serveur GET /{id}/diff?branch&base: stat + diff tronque a 256 Ko, test unitaire
-	[ ] overlay: bouton diff quand la tache a un contexte, pre colore +/-, stat
+	[x] overlay: bouton diff quand la tache a un contexte, pre colore +/-, stat
 	[ ] build trunk + smoke + suite verte
 db6cc5fc4417610987c4cb153ddcb17d5875ea27:
 	[x] vendor daisyUI css complet + theme, index.html, styles layout minimal
