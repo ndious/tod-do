@@ -65,7 +65,7 @@ a22e94e6843d0fe15a32e337ad2460b51f437ab7:
 ad64a1e2feadac8a418755e1c2144109c57a2f02:
 	[x] start: branche depuis main (--base pour empiler)
 	[x] x: cloturer depuis n'importe quelle branche
-	[ ] rfr: etat ready-for-review + push de la branche + badge web
+	[x] rfr: etat ready-for-review + push de la branche + badge web
 	[ ] finish: rebase sur main + ff-merge + suppression branche + resolve contexte
 	[ ] README workflow + build + tests + smoke
 b0f2c8d0d0d63b7b5f7532d0163c22e4bf0491d1:
