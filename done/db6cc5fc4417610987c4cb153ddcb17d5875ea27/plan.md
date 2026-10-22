@@ -1,0 +1,6 @@
+- [x] vendor daisyUI css complet + theme, index.html, styles layout minimal
+- [x] refactor composants: login card, forms input/select/btn, task cards + badges + progress
+- [x] rebuild trunk + smoke test console serve + suite verte
+- [x] persistance: token en localStorage + restauration au chargement + bouton logout
+- [x] 401 -> deconnexion automatique (token invalide/expire) + rebuild + smoke
+- [x] ops: donnees du serveur hors /tmp (chemins par defaut du repo) + auto-selection du premier repo apres login

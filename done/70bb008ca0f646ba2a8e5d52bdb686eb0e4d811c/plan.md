@@ -1,0 +1,9 @@
+- [x] POC: installer le CLI loco, generer une app api-only sqlite, valider son integration dans le workspace a la place de crates/server
+- [x] scaffold: config yaml (dev/prod), cycle de vie Loco, modules git conserves (repos.rs, ssh.rs) en attente de branchage
+- [x] modeles + migrations SeaORM: users (auth loco), repos, user_keys — remplace rusqlite
+- [x] auth loco JWT: login/refresh, middleware Bearer — la console web garde Authorization: Bearer
+- [x] controleurs: /api/repos, /api/repos/:id/{status,task,sub,check}, /api/keys en async SeaORM
+- [x] ssh: spawn dans after_routes, key_owner -> entite SeaORM, tests d'auth ssh portes
+- [x] menage: suppression db.rs rusqlite + argon2 custom, static console servie par loco, Dockerfile
+- [x] tests: e2e ssh + api portes sous loco, suite verte
+- [x] README: nouvelle section serveur loco (config, migrations, JWT)

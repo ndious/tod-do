@@ -1,0 +1,2 @@
+- [x] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
+- [x] overlay TaskDetail: description, meta, plan cliquable, ajout de step, fermeture (bouton, fond, Escape)

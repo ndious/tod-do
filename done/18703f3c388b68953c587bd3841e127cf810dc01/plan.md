@@ -1,0 +1,4 @@
+- [x] cli: ls masque les taches faites par defaut, -a/--all pour tout montrer
+- [x] README + smoke test (scratch repo: tache done/undo, ls vs ls -a)
+- [x] cli: ls --all-contexts (-A) liste backlog + tous les contextes, respecte le filtre done
+- [x] README/SKILL.md + smoke test multi-contextes

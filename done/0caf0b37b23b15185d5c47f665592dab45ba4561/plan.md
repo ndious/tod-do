@@ -1,0 +1,10 @@
+- [x] git.rs: helpers remotes, fetch, merge --ff-only, push
+- [x] store: pull avant chaque commande (avec dedup par instance) et push apres chaque commit
+- [x] tests: sync deux machines via un bare distant + remote injoignable = warning
+- [x] README: documenter le comportement de synchronisation
+- [x] perf: push une seule fois par commande (fin de vie du Store) et seulement si commit reel
+- [x] perf: pull assujetti a un TTL (TOD_SYNC_TTL, defaut 30s, marqueur dans .git)
+- [x] TOD_NO_SYNC kill switch + tests + README + bench avant/apres
+- [x] git: spawn_push en tache de fond (processus detache + thread reaper) + helper ahead_of
+- [x] store: push async par defaut depuis discover (TOD_SYNC_PUSH=sync pour bloquer), auto-retry si origin en retard
+- [x] server: push async + tests avec polling + README + bench final

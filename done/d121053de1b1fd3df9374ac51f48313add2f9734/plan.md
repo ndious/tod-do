@@ -1,0 +1,2 @@
+- [x] cli: CompleteEnv + candidats d'ids dynamiques (x/rm/mv/start/brief/sub/check)
+- [x] commande tod completions <shell> + README/SKILL.md + smoke bash/zsh

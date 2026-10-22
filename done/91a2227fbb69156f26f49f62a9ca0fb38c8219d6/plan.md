@@ -1,0 +1,3 @@
+- [x] board kanban horizontal: une colonne par contexte, backlog en premier
+- [x] colonnes scrollables, cartes task existantes (plan cliquable), done en bas
+- [x] build trunk + smoke serveur + suite verte

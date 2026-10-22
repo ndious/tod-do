@@ -1,0 +1,5 @@
+- [x] start: branche depuis main (--base pour empiler)
+- [x] x: cloturer depuis n'importe quelle branche
+- [x] rfr: etat ready-for-review + push de la branche + badge web
+- [x] finish: rebase sur main + ff-merge + suppression branche + resolve contexte
+- [x] README workflow + build + tests + smoke

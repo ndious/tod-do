@@ -1,0 +1,3 @@
+- [x] endpoint serveur GET /{id}/diff?branch&base: stat + diff tronque a 256 Ko, test unitaire
+- [x] overlay: bouton diff quand la tache a un contexte, pre colore +/-, stat
+- [x] build trunk + smoke + suite verte

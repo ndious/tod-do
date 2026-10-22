@@ -1,0 +1,3 @@
+- [x] serveur: clone_url dans l'API repos (host du header Host + port ssh des settings)
+- [x] web: bar clone sur la page repo, bouton copy via l'API clipboard
+- [x] build trunk + smoke + suite verte

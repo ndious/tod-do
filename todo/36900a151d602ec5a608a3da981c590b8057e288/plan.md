@@ -1,0 +1,5 @@
+- [x] dot: layout par etat, task.tod avec champ Branch:, dossier t/ nomme par hash, find/load/move par etat
+- [ ] dot: plan.md et spec.md dans le dossier de la tache (fin du plan.dot central et du dossier md)
+- [ ] cli: tod state <id> <etat> + mapping start->todo, rfr->review, x->done, rm->canceled ; status/ls/ctx par etat et branche
+- [ ] server+web: colonnes kanban par etat, champ state/branch, endpoint state, suppression AddForm context
+- [ ] migration de notre branche tod + tests + README + cycle complet

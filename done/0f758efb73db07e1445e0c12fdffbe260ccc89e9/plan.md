@@ -1,0 +1,5 @@
+- [x] routing hash minimal: enum Route, hashchange listener, liens de navigation
+- [x] header navbar: titre + nav (repos, nouveau) + logout
+- [x] page creation dediee + redirection vers le repo cree
+- [x] page repo: board complet (status, add, backlog, contexts), liste des repos en page d'accueil
+- [x] rebuild trunk + smoke + suite verte + README

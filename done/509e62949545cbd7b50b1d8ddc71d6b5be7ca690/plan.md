@@ -1,0 +1,4 @@
+- [x] store: methode move_task_to (backlog ou contexte -> contexte cible) avec commit
+- [x] git: slug de branche depuis la description + creation/checkout de la branche
+- [x] cli: commande start avec --branch optionnel, help, README, SKILL.md
+- [x] tests: move_task_to, slug, start end-to-end + suite verte

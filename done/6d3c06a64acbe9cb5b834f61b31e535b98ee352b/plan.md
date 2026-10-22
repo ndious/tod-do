@@ -1,0 +1,4 @@
+- [x] server: POST /api/repos url vide -> creation bare + branches main/tod (commit orphelin) + worktree tod
+- [x] repos.rs: prepare/relay tolerent un repository sans origin
+- [x] console: URL vide = creation d'un nouveau repository + selection auto
+- [x] smoke: creation via API + clone SSH + push + todos visibles + suite verte + README
