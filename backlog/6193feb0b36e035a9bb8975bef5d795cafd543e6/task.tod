@@ -2,3 +2,4 @@ Description: scenarios gherkin: scenario.feature par tache, commande tod scenari
 Author: Nicolas D.
 Created: 2026-10-22 13:52:54 +0000
 Updated: 2026-10-22 13:52:54 +0000
+Branch: t/6193feb-scenarios-gherkin-scenario
