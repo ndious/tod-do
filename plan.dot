@@ -83,6 +83,6 @@ db6cc5fc4417610987c4cb153ddcb17d5875ea27:
 	[x] 401 -> deconnexion automatique (token invalide/expire) + rebuild + smoke
 	[x] ops: donnees du serveur hors /tmp (chemins par defaut du repo) + auto-selection du premier repo apres login
 e1725e2d535b03e462a55d7e24e4b7536a0a1ef3:
-	[ ] dot: champ tags (texte separe par virgules), normalize (lowercase, dedup), set_tags
+	[x] dot: champ tags (texte separe par virgules), normalize (lowercase, dedup), set_tags
 	[ ] cli: commande tag, affichage ls/status, filtre ls -t
 	[ ] serveur: POST /tag + tags dans TaskView; web: badges cartes + edition overlay
