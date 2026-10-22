@@ -4,10 +4,10 @@
 - **State**: test
 - **Branch**: t/30cb272-branche-test-parallele-a-main
 - **Created**: 2026-10-22 14:12:15 +0000
-- **Progress**: 2/3
+- **Progress**: 3/3
 
 ## Plan
 
 - [x] cli: tod test <id> — rebase, merge dans la branche test, etat test, push
 - [x] cli: finish rebase la branche test sur main (les commits mergees tombent)
-- [ ] tests + README + cycle complet
+- [x] tests + README + cycle complet
