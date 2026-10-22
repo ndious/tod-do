@@ -1,2 +1,3 @@
 - [ ] cli: helper editeur (TOD_EDITOR > EDITOR > vi) + tod spec <id> [--edit]
 - [ ] cli: tod scenario <id> [--edit] (scaffold puis editeur)
+- [ ] tests + README + cycle complet
