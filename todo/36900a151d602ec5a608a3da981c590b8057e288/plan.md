@@ -2,4 +2,4 @@
 - [x] dot: plan.md et spec.md dans le dossier de la tache (fin du plan.dot central et du dossier md)
 - [x] cli: tod state <id> <etat> + mapping start->todo, rfr->review, x->done, rm->canceled ; status/ls/ctx par etat et branche
 - [x] server+web: colonnes kanban par etat, champ state/branch, endpoint state, suppression AddForm context
-- [ ] migration de notre branche tod + tests + README + cycle complet
+- [x] migration de notre branche tod + tests + README + cycle complet
