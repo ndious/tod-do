@@ -1,0 +1,1 @@
+- [ ] dot: module spec (scaffold prompt: analyse existant, recherches, reflexions, travail) — fin du brief genere
