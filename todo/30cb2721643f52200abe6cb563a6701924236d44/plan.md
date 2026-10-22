@@ -1,2 +1,3 @@
 - [ ] cli: tod test <id> — rebase, merge dans la branche test, etat test, push
 - [ ] cli: finish rebase la branche test sur main (les commits mergees tombent)
+- [ ] tests + README + cycle complet
