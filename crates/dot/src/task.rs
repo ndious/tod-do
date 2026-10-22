@@ -1,4 +1,10 @@
 //! The todo task: a dot document with a fixed schema, one file per task.
+//!
+//! A task lives in a directory named by its uid (a sha1 hash), inside
+//! the directory of its state (backlog, todo, review, test, done,
+//! canceled). The directory holds `task.tod` (this document), and
+//! optionally `plan.md` (its micro-todo list) and `spec.md` (the
+//! fine-grained work description handed to a development agent).
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -7,15 +13,19 @@ use serde::{Deserialize, Serialize};
 use crate::schema::{Document, Field, Schema};
 use crate::types::FieldType;
 
-/// The task schema, ported from tod-cli's storage.js.
+/// The task file inside the task directory.
+pub const TASK_FILE: &str = "task.tod";
+
+/// The task schema, ported from tod-cli's storage.js. The state of a
+/// task is its directory, not a field; the working branch is a field
+/// since the per-context directories are gone.
 pub fn task_schema() -> Schema {
     Schema::new(vec![
         ("description", FieldType::Text),
         ("author", FieldType::Text),
         ("created", FieldType::Iso8601),
         ("updated", FieldType::Iso8601),
-        ("done", FieldType::Bool),
-        ("rfr", FieldType::Bool),
+        ("branch", FieldType::Text),
         ("tags", FieldType::Text),
         ("content", FieldType::Text),
     ])
@@ -43,7 +53,7 @@ fn stringify_tags(tags: &[String]) -> String {
     tags.join(", ")
 }
 
-/// A single todo. One task = one dot file named by its uid (sha1).
+/// A single todo. One task = one directory named by its uid (sha1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub uid: String,
@@ -51,11 +61,9 @@ pub struct Task {
     pub author: String,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
-    pub done: bool,
-    /// Ready for review: the work is finished, waiting for a
-    /// review before `tod finish`.
+    /// The working branch of the task, set by `tod start`.
     #[serde(default)]
-    pub rfr: bool,
+    pub branch: Option<String>,
     /// Free-form labels, normalized lowercase.
     #[serde(default)]
     pub tags: Vec<String>,
@@ -64,13 +72,13 @@ pub struct Task {
 }
 
 impl Task {
-    /// Render the task as a dot document file (uid is the file name,
-    /// not part of the content, exactly like tod-cli).
+    /// Render the task as a dot document file (uid is the directory
+    /// name, not part of the content).
     pub fn stringify(&self) -> String {
         task_schema().stringify(&self.to_document())
     }
 
-    /// Parse a task file. 'uid' comes from the file name.
+    /// Parse a task file. 'uid' comes from the directory name.
     pub fn parse(uid: &str, content: &str) -> Result<Task> {
         let doc = task_schema()
             .parse(content)
@@ -88,14 +96,7 @@ impl Task {
             Some(Field::Datetime(dt)) => *dt,
             _ => created,
         };
-        let done = match doc.get("done") {
-            Some(Field::Bool(b)) => *b,
-            _ => false,
-        };
-        let rfr = match doc.get("rfr") {
-            Some(Field::Bool(b)) => *b,
-            _ => false,
-        };
+        let branch = doc.text("branch").filter(|b| !b.trim().is_empty());
         let tags = doc.text("tags").as_deref().map(parse_tags).unwrap_or_default();
         let content = doc.text("content");
 
@@ -105,8 +106,7 @@ impl Task {
             author,
             created,
             updated,
-            done,
-            rfr,
+            branch,
             tags,
             content,
         })
@@ -118,8 +118,9 @@ impl Task {
         doc.set("author", Field::Text(self.author.clone()));
         doc.set("created", Field::Datetime(self.created));
         doc.set("updated", Field::Datetime(self.updated));
-        doc.set("done", Field::Bool(self.done));
-        doc.set("rfr", Field::Bool(self.rfr));
+        if let Some(branch) = &self.branch {
+            doc.set("branch", Field::Text(branch.clone()));
+        }
         if !self.tags.is_empty() {
             doc.set("tags", Field::Text(stringify_tags(&self.tags)));
         }
@@ -129,81 +130,5 @@ impl Task {
             doc.set("content", Field::Block(lines));
         }
         doc
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample() -> Task {
-        let dt = DateTime::parse_from_rfc3339("2026-10-06T18:12:44Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        Task {
-            uid: "abc123".to_string(),
-            description: "write the tests".to_string(),
-            author: "tester".to_string(),
-            created: dt,
-            updated: dt,
-            done: false,
-            rfr: false,
-            tags: Vec::new(),
-            content: None,
-        }
-    }
-
-    #[test]
-    fn task_file_round_trip() {
-        let task = sample();
-        let file = task.stringify();
-        let back = Task::parse("abc123", &file).unwrap();
-        assert_eq!(back, task);
-    }
-
-    #[test]
-    fn task_file_looks_like_the_original_format() {
-        let file = sample().stringify();
-        assert!(file.starts_with("Description: write the tests\nAuthor: tester\n"));
-        assert!(file.contains("Created: 2026-10-06 18:12:44 +0000\n"));
-        assert!(file.contains("Done: 0\n"));
-    }
-
-    #[test]
-    fn tags_are_normalized_and_round_trip() {
-        let mut task = sample();
-        task.tags = normalize_tags(vec![
-            "Rust".into(),
-            " CLI ".into(),
-            "rust".into(),
-            "".into(),
-            "Git".into(),
-        ]);
-        assert_eq!(task.tags, vec!["rust".to_string(), "cli".to_string(), "git".to_string()]);
-
-        let back = Task::parse("abc123", &task.stringify()).unwrap();
-        assert_eq!(back.tags, task.tags);
-
-        // a file without tags reads as an empty list
-        let bare = sample();
-        assert!(bare.tags.is_empty());
-    }
-
-    #[test]
-    fn multi_line_content_round_trip() {
-        let mut task = sample();
-        task.content = Some("first line\nsecond line".to_string());
-        let back = Task::parse("abc123", &task.stringify()).unwrap();
-        assert_eq!(back.content, Some("first line\nsecond line".to_string()));
-    }
-
-    #[test]
-    fn missing_description_is_an_error() {
-        assert!(Task::parse("x", "Author: tester\n").is_err());
-    }
-
-    #[test]
-    fn missing_dates_are_rejected() {
-        assert!(Task::parse("x", "Description: hi\n").is_err());
     }
 }

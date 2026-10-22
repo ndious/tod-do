@@ -185,3 +185,6 @@ pre.diff {
 /* tag editor */
 .tags-form { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
 .tags-form input[type="text"] { flex: 1; }
+
+/* state selector of the detail overlay */
+.state-bar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }

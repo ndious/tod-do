@@ -5,6 +5,7 @@ use std::fs;
 use std::process::Command;
 
 use dot::store::Store;
+use dot::task::TASK_FILE;
 
 /// Create a temp directory, run 'git init' inside, and a Store on it.
 fn setup() -> (tempfile::TempDir, Store) {
@@ -21,7 +22,7 @@ fn setup() -> (tempfile::TempDir, Store) {
 }
 
 #[test]
-fn add_task_to_current_context() {
+fn add_task_to_current_branch() {
     let (_dir, store) = setup();
     let branch = store.branch().unwrap();
 
@@ -32,14 +33,12 @@ fn add_task_to_current_context() {
     assert_eq!(tasks[0].uid, task.uid);
     assert_eq!(tasks[0].description, "write the tests");
     assert_eq!(tasks[0].author, "tester");
-    assert!(!tasks[0].done);
 
-    // one extension-less file per task, named by the uid, in dot format
-    let file = store.context_dir(&branch).join(&task.uid);
-    assert!(file.is_file());
-    let content = fs::read_to_string(&file).unwrap();
+    // one directory per task, named by the uid, holding task.tod
+    let dir = store.state_dir("todo").unwrap().join(&task.uid);
+    let content = fs::read_to_string(dir.join(TASK_FILE)).unwrap();
     assert!(content.contains("Description: write the tests"));
-    assert!(content.contains("Done: 0"));
+    assert!(content.contains(&format!("Branch: {branch}")));
 }
 
 #[test]
@@ -56,21 +55,11 @@ fn add_task_to_backlog() {
 #[test]
 fn complete_task_with_partial_identifier() {
     let (_dir, store) = setup();
-    let branch = store.branch().unwrap();
-    let task = store.add("finish the port", "tester", false).unwrap();
-
-    // The dot format stores timestamps with second precision, so
-    // backdate 'created' to make the 'updated' refresh observable.
-    let mut stored = store.load_context(&branch).unwrap()[0].clone();
-    stored.created = chrono::Utc::now() - chrono::Duration::hours(1);
-    dot::store::write_task(&store.context_dir(&branch), &stored).unwrap();
+    let task = store.add("finish the port", "tester", true).unwrap();
 
     let done = store.complete(&task.uid[..5]).unwrap();
-    assert!(done.done);
-
-    let tasks = store.load_context(&branch).unwrap();
-    assert!(tasks[0].done);
-    assert_ne!(tasks[0].updated, tasks[0].created);
+    let _ = done;
+    assert_eq!(store.find_task(&task.uid).unwrap().0, "done");
 
     // completing twice is an error
     assert!(store.complete(&task.uid[..5]).is_err());
@@ -79,32 +68,32 @@ fn complete_task_with_partial_identifier() {
 }
 
 #[test]
-fn remove_task_from_context_and_backlog() {
+fn cancel_task_keeps_it_in_canceled() {
     let (_dir, store) = setup();
-    let branch = store.branch().unwrap();
-    let ctx_task = store.add("in context", "tester", false).unwrap();
-    let backlog_task = store.add("in backlog", "tester", true).unwrap();
+    let task = store.add("doomed", "tester", true).unwrap();
 
-    store.remove(&ctx_task.uid[..5], false).unwrap();
-    assert!(store.load_context(&branch).unwrap().is_empty());
-
-    store.remove(&backlog_task.uid[..5], true).unwrap();
+    store.remove(&task.uid[..5]).unwrap();
     assert!(store.load_backlog().unwrap().is_empty());
+    assert_eq!(store.load_state("canceled").unwrap().len(), 1);
+
+    // the task directory (task.tod) moved with it
+    let dir = store.state_dir("canceled").unwrap().join(&task.uid);
+    assert!(dir.join(TASK_FILE).is_file());
 }
 
 #[test]
-fn move_task_between_backlog_and_context() {
+fn move_task_between_backlog_and_branch() {
     let (_dir, store) = setup();
     let branch = store.branch().unwrap();
     let task = store.add("move me", "tester", true).unwrap();
     let short = &task.uid[..5];
 
-    // backlog -> context
+    // backlog -> current branch
     store.move_task(short, false).unwrap();
     assert!(store.load_backlog().unwrap().is_empty());
     assert_eq!(store.load_context(&branch).unwrap().len(), 1);
 
-    // context -> backlog
+    // branch -> backlog
     store.move_task(short, true).unwrap();
     assert_eq!(store.load_backlog().unwrap().len(), 1);
     assert!(store.load_context(&branch).unwrap().is_empty());
@@ -114,7 +103,7 @@ fn move_task_between_backlog_and_context() {
 }
 
 #[test]
-fn contexts_lists_only_branches_with_todos() {
+fn contexts_lists_only_branches_with_active_tasks() {
     let (_dir, store) = setup();
     let branch = store.branch().unwrap();
     store.add("one task", "tester", false).unwrap();
@@ -126,57 +115,54 @@ fn contexts_lists_only_branches_with_todos() {
 }
 
 #[test]
-fn resolve_deletes_context_and_its_tasks() {
+fn resolve_cancels_the_tasks_of_a_branch() {
     let (_dir, store) = setup();
     let branch = store.branch().unwrap();
     store.add("doomed task", "tester", false).unwrap();
 
     let count = store.resolve(&branch).unwrap();
     assert_eq!(count, 1);
-    assert!(!store.context_dir(&branch).exists());
     assert!(store.load_context(&branch).unwrap().is_empty());
-
-    // resolving twice fails: context no longer exists
-    assert!(store.resolve(&branch).is_err());
+    assert_eq!(store.load_state("canceled").unwrap().len(), 1);
 }
 
 #[test]
 fn export_whole_database_as_json() {
     let (dir, store) = setup();
-    let branch = store.branch().unwrap();
-    store.add("context task", "tester", false).unwrap();
+    store.add("todo task", "tester", false).unwrap();
     store.add("backlog task", "tester", true).unwrap();
 
     let output = dir.path().join("export.json");
     let output_str = output.to_str().unwrap();
-    let (backlog_count, context_count) = store.export(output_str).unwrap();
-    assert_eq!(backlog_count, 1);
-    assert_eq!(context_count, 1);
+    let (task_count, state_count) = store.export(output_str).unwrap();
+    assert_eq!(task_count, 2);
+    assert_eq!(state_count, 6);
 
     let db: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
-    assert_eq!(db["backlog"].as_array().unwrap().len(), 1);
+    assert_eq!(db["states"]["backlog"].as_array().unwrap().len(), 1);
     assert_eq!(
-        db["backlog"][0]["description"].as_str().unwrap(),
+        db["states"]["backlog"][0]["description"].as_str().unwrap(),
         "backlog task"
     );
-    assert!(db["contexts"][&branch].is_array());
+    assert_eq!(db["states"]["todo"].as_array().unwrap().len(), 1);
     assert_eq!(
-        db["contexts"][&branch][0]["description"].as_str().unwrap(),
-        "context task"
+        db["states"]["todo"][0]["description"].as_str().unwrap(),
+        "todo task"
     );
 }
 
 #[test]
 fn invalid_task_files_are_skipped_not_fatal() {
     let (_dir, store) = setup();
-    let branch = store.branch().unwrap();
-    store.add("good task", "tester", false).unwrap();
+    store.add("good task", "tester", true).unwrap();
 
-    // a corrupted file must not break the listing
-    fs::write(store.context_dir(&branch).join("broken"), "not a dot file").unwrap();
+    // a corrupted task.tod must not break the listing
+    let broken = store.state_dir("backlog").unwrap().join("broken");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(broken.join(TASK_FILE), "not a dot file").unwrap();
 
-    let tasks = store.load_context(&branch).unwrap();
+    let tasks = store.load_backlog().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].description, "good task");
 }

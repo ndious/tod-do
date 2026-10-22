@@ -143,11 +143,16 @@ enum Commands {
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
-    /// Delete a task
+    /// Move a task to another state
+    State {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+        /// The target state (backlog | todo | review | test | done | canceled)
+        state: String,
+    },
+    /// Cancel a task (it moves to the canceled state)
     Rm {
-        /// Delete from the backlog instead of the current context
-        #[arg(short, long)]
-        backlog: bool,
         /// Full or partial task identifier
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
@@ -216,7 +221,8 @@ fn main() -> Result<()> {
         Commands::Tag { identifier, tags } => commands::tag(&identifier, tags),
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rfr { identifier } => commands::rfr(&identifier),
-        Commands::Rm { backlog, identifier } => commands::rm(&identifier, backlog),
+        Commands::State { identifier, state } => commands::state(&identifier, &state),
+        Commands::Rm { identifier } => commands::rm(&identifier),
         Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
         Commands::Start { identifier, branch, base } => commands::start(&identifier, branch, base.as_deref()),
         Commands::Finish { base } => commands::finish(&base),

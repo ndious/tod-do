@@ -1,11 +1,10 @@
-use std::fs;
 use std::io::{IsTerminal, Write};
 
 use anyhow::{bail, Result};
 
 use dot::brief;
 use dot::git;
-use dot::plan::Project;
+use dot::plan::Plan;
 use dot::store::Store;
 use dot::task::Task;
 
@@ -116,31 +115,33 @@ pub fn plan(description: &str, backlog: bool) -> Result<()> {
     let store = Store::discover()?;
     let author = git::user_name();
     let task = store.add(description, &author, backlog)?;
-    let context = if backlog {
-        "backlog".to_string()
-    } else {
-        store.branch()?
-    };
 
-    let mut project = Project::load(&store)?;
-    project.ensure_plan(&task.uid);
-    project.save(&store)?;
+    // the plan command creates the spec.md in advance
+    let (state, dir) = store.locate(&task.uid)?;
+    let plan = Plan::load(&dir)?;
+    brief::write_brief(&dir, &task, &state, &plan)?;
+    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
 
-    let plan = project.plan(&task.uid).cloned().unwrap_or_default();
-    let path = brief::write_brief(&store, &task, &context, &plan)?;
-    println!("Planned #{} {} — {}", &task.uid[..5], task.description, path.display());
+    println!(
+        "Planned #{} {} — {}",
+        &task.uid[..5],
+        task.description,
+        dir.join(dot::brief::SPEC_FILE).display()
+    );
     Ok(())
 }
 
 pub fn sub(identifier: &str, step: &str) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (context, task) = store.find_task(identifier)?;
+    let (state, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
 
-    let mut project = Project::load(&store)?;
-    let number = project.add_step(&task.uid, step);
-    project.save(&store)?;
-    refresh_brief(&store, &task, &context, &project)?;
+    let mut plan = Plan::load(&dir)?;
+    let number = plan.add_step(step);
+    Plan::save(&dir, &plan)?;
+    store.commit("tod: update plan")?;
+    refresh_brief(&store, &task, &state)?;
 
     println!("Added step {number} to #{}: {step}", &task.uid[..5]);
     Ok(())
@@ -149,12 +150,14 @@ pub fn sub(identifier: &str, step: &str) -> Result<()> {
 pub fn check(identifier: &str, number: usize) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (context, task) = store.find_task(identifier)?;
+    let (state, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
 
-    let mut project = Project::load(&store)?;
-    let step = project.check_step(&task.uid, number)?;
-    project.save(&store)?;
-    refresh_brief(&store, &task, &context, &project)?;
+    let mut plan = Plan::load(&dir)?;
+    let step = plan.check_step(number)?;
+    Plan::save(&dir, &plan)?;
+    store.commit("tod: update plan")?;
+    refresh_brief(&store, &task, &state)?;
 
     let mark = if step.done { 'x' } else { ' ' };
     println!("[{mark}] step {number} of #{}: {}", &task.uid[..5], step.text);
@@ -164,42 +167,46 @@ pub fn check(identifier: &str, number: usize) -> Result<()> {
 pub fn brief(identifier: &str) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (context, task) = store.find_task(identifier)?;
-    let project = Project::load(&store)?;
-    let plan = project.plan(&task.uid).cloned().unwrap_or_default();
+    let (state, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
+    let plan = Plan::load(&dir)?;
 
-    let path = brief::write_brief(&store, &task, &context, &plan)?;
-    let content = fs::read_to_string(&path)?;
-    println!("{content}");
+    brief::write_brief(&dir, &task, &state, &plan)?;
+    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
+    println!("{}", brief::markdown(&task, &state, &plan));
     Ok(())
 }
 
 pub fn status() -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let project = Project::load(&store)?;
 
-    let print = |label: &str, tasks: &[Task]| {
-        println!("{label}:");
+    for (state, tasks) in store.states()? {
+        println!("{}:", state.to_uppercase());
         if tasks.is_empty() {
             println!("  (none)");
-            return;
+            continue;
         }
-        for task in tasks {
-            let mark = if task.done { 'x' } else if task.rfr { 'r' } else { ' ' };
-            let progress = match project.plan(&task.uid) {
-                Some(plan) if !plan.is_empty() => {
-                    format!(" [{} {}]", plan.done_count(), plan.steps.len())
-                }
-                _ => String::new(),
+        for task in &tasks {
+            let plan = Plan::load(&store.locate(&task.uid)?.1)?;
+            let progress = if !plan.is_empty() {
+                format!(" [{} {}]", plan.done_count(), plan.steps.len())
+            } else {
+                String::new()
             };
-            println!("  [{mark}] #{} {}{}{progress}", &task.uid[..5], task.description, tags_suffix(task));
+            let branch = task
+                .branch
+                .as_deref()
+                .map(|b| format!(" @{b}"))
+                .unwrap_or_default();
+            println!(
+                "  #{} {}{}{}{progress}",
+                &task.uid[..5],
+                task.description,
+                tags_suffix(task),
+                branch
+            );
         }
-    };
-
-    print("Backlog", &store.load_backlog()?);
-    for (name, tasks) in store.contexts()? {
-        print(&name, &tasks);
     }
     Ok(())
 }
@@ -209,90 +216,59 @@ fn tags_suffix(task: &Task) -> String {
     task.tags.iter().map(|t| format!(" #{t}")).collect()
 }
 
-/// List the todos. Only the tasks left to do are shown, unless
-/// 'all' is set. 'all_contexts' lists the backlog plus every
-/// context instead of the current one. 'tag' keeps only the tasks
+/// List the todos. The tasks left to do (backlog, todo, review,
+/// test) are shown, unless 'all' also includes done and canceled.
+/// Default is the current branch; 'backlog' is the backlog;
+/// 'all_contexts' is every state. 'tag' keeps only the tasks
 /// carrying a given tag.
 pub fn ls(backlog: bool, all: bool, all_contexts: bool, tag: Option<String>) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let visible = |tasks: &[Task]| -> Vec<Task> {
-        tasks
-            .iter()
-            .filter(|t| {
-                (all || !t.done)
-                    && tag.as_ref().map_or(true, |want| t.tags.iter().any(|x| x == want))
-            })
-            .cloned()
-            .collect()
-    };
 
-    let print_list = |tasks: &[Task]| {
-        for task in tasks {
-            let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-            println!("{mark} #{}  {}{}", &task.uid[..5], task.description, tags_suffix(task));
-        }
-    };
-
-    if all_contexts {
-        let backlog_tasks = store.load_backlog()?;
-        let shown = visible(&backlog_tasks);
-        println!("Backlog:");
-        if shown.is_empty() {
-            println!("  (none{})", if backlog_tasks.is_empty() { "" } else { " left to do" });
-        } else {
-            for task in &shown {
-                let created = task.created.format("%Y-%m-%d");
-                let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-                println!("{mark} #{}  {}{}  ({})", &task.uid[..5], task.description, tags_suffix(task), created);
-            }
-        }
-        for (name, tasks) in store.contexts()? {
-            let shown = visible(&tasks);
-            println!("{name}:");
-            if shown.is_empty() {
-                if tasks.is_empty() {
-                    println!("  (none)");
-                } else {
-                    println!("  (all done)");
-                }
-            } else {
-                print_list(&shown);
-            }
-        }
-        return Ok(());
-    }
-
-    if backlog {
-        let tasks = store.load_backlog()?;
-        let shown = visible(&tasks);
-        if shown.is_empty() {
-            if tasks.is_empty() {
-                println!("No backlog todos available");
-            } else {
-                println!("Backlog: everything is done ('tod ls -b -a' to show them)");
-            }
-            return Ok(());
-        }
-        println!("Backlog:");
-        for task in &shown {
-            let created = task.created.format("%Y-%m-%d");
-            let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-            println!("{mark} #{}  {}{}  ({})", &task.uid[..5], task.description, tags_suffix(task), created);
-        }
+    let mut source: Vec<(String, Vec<Task>)> = if all_contexts {
+        store.states()?
+    } else if backlog {
+        vec![("backlog".to_string(), store.load_backlog()?)]
     } else {
         let branch = store.branch()?;
-        let tasks = store.load_context(&branch)?;
-        let shown = visible(&tasks);
-        if shown.is_empty() {
-            if tasks.is_empty() {
-                println!("No todos available in context '{branch}'");
-            } else {
-                println!("No todos left in context '{branch}' — all done ('tod ls -a' to show them)");
-            }
-            return Ok(());
+        vec![(branch.clone(), store.load_context(&branch)?)]
+    };
+
+    // 'all' includes the finished states; otherwise only the work
+    // left to do. The tag filter applies on top of it.
+    for (state, tasks) in &mut source {
+        let keep_state = all || !matches!(state.as_str(), "done" | "canceled");
+        if keep_state {
+            tasks.retain(|t| {
+                tag.as_ref()
+                    .map_or(true, |want| t.tags.iter().any(|x| x == want))
+            });
+        } else {
+            tasks.clear();
         }
-        print_list(&shown);
+    }
+
+    for (state, tasks) in &source {
+        if tasks.is_empty() {
+            continue;
+        }
+        if all_contexts {
+            println!("{state}:");
+        }
+        for task in tasks {
+            let branch = task
+                .branch
+                .as_deref()
+                .map(|b| format!(" @{b}"))
+                .unwrap_or_default();
+            println!(
+                "[{state}] #{}  {}{}{}",
+                &task.uid[..5],
+                task.description,
+                tags_suffix(task),
+                branch
+            );
+        }
     }
     Ok(())
 }
@@ -322,11 +298,23 @@ pub fn done(identifier: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn rm(identifier: &str, backlog: bool) -> Result<()> {
+/// Move a task to an arbitrary state.
+pub fn state(identifier: &str, target: &str) -> Result<()> {
     let store = Store::discover()?;
-    let task = store.remove(identifier, backlog)?;
-    forget_task(&store, &[task.uid.clone()])?;
-    println!("Deleted #{} {}", &task.uid[..5], task.description);
+    let task = store.set_state(identifier, target)?;
+    println!(
+        "Moved #{} {} to {target}",
+        &task.uid[..5], task.description
+    );
+    Ok(())
+}
+
+/// Cancel a task: it moves to the canceled state, its directory
+/// (task.tod, plan.md, spec.md) is kept for the record.
+pub fn rm(identifier: &str) -> Result<()> {
+    let store = Store::discover()?;
+    let task = store.remove(identifier)?;
+    println!("Canceled #{} {}", &task.uid[..5], task.description);
     Ok(())
 }
 
@@ -372,7 +360,7 @@ fn start_in(store: &Store, identifier: &str, branch: Option<String>, base: &str)
     };
     git::create_branch_from(store.root(), &branch, base)?;
     git::checkout(store.root(), &branch)?;
-    store.move_task_to(identifier, &branch)?;
+    store.start_task(identifier, &branch)?;
 
     println!(
         "Started #{} {} on branch '{branch}'",
@@ -397,15 +385,12 @@ pub fn finish(base: &str) -> Result<()> {
     git::checkout(root, base)?;
     git::merge_ff_only(root, &branch)?;
 
-    // the branch is merged: it can die, and its context with it
-    let tasks = store.load_context(&branch)?;
-    let count = store.resolve(&branch)?;
-    let uids: Vec<String> = tasks.iter().map(|t| t.uid.clone()).collect();
-    forget_task(&store, &uids)?;
+    // the branch is merged: it can die, and its tasks are done
+    let count = store.complete_context(&branch)?;
     git::delete_branch(root, &branch)?;
 
     println!(
-        "Finished '{branch}': merged into '{base}', {count} todo(s) resolved, branch deleted"
+        "Finished '{branch}': merged into '{base}', {count} task(s) done, branch deleted"
     );
     Ok(())
 }
@@ -447,43 +432,26 @@ pub fn ctx() -> Result<()> {
 pub fn resolve(context: &str) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let tasks = store.load_context(context)?;
     let count = store.resolve(context)?;
-    let uids: Vec<String> = tasks.iter().map(|t| t.uid.clone()).collect();
-    forget_task(&store, &uids)?;
-    println!("Resolved context '{context}': {count} todo(s) deleted");
+    println!("Resolved context '{context}': {count} task(s) canceled");
     Ok(())
 }
 
 pub fn export(output: &str) -> Result<()> {
     let store = Store::discover()?;
-    let (backlog, contexts) = store.export(output)?;
-    println!("Exported {backlog} backlog todo(s) and {contexts} context(s) to {output}");
-    Ok(())
-}
-
-/// Remove the plan entries and spec markdowns of deleted tasks.
-fn forget_task(store: &Store, uids: &[String]) -> Result<()> {
-    let mut project = Project::load(store)?;
-    let mut changed = false;
-    for uid in uids {
-        project.remove(uid);
-        changed = true;
-        let _ = fs::remove_file(store.md_dir().join(format!("{uid}.md")));
-    }
-    if changed {
-        project.save(store)?;
-    }
+    let (tasks, states) = store.export(output)?;
+    println!("Exported {tasks} task(s) across {states} states to {output}");
     Ok(())
 }
 
 /// Regenerate the spec markdown, but only if it already exists:
-/// 'tod brief' is the explicit way to (re)generate a brief.
-fn refresh_brief(store: &Store, task: &Task, context: &str, project: &Project) -> Result<()> {
-    let path = store.md_dir().join(format!("{}.md", task.uid));
-    if path.exists() {
-        let plan = project.plan(&task.uid).cloned().unwrap_or_default();
-        brief::write_brief(store, task, context, &plan)?;
+/// 'tod brief' is the explicit way to (re)generate a spec.
+fn refresh_brief(store: &Store, task: &Task, state: &str) -> Result<()> {
+    let dir = store.locate(&task.uid)?.1;
+    if dir.join(dot::brief::SPEC_FILE).is_file() {
+        let plan = Plan::load(&dir)?;
+        brief::write_brief(&dir, task, state, &plan)?;
+        store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
     }
     Ok(())
 }
@@ -513,7 +481,7 @@ mod tests {
     #[test]
     fn start_creates_a_branch_and_moves_the_task_into_it() {
         let (dir, store) = git_repo();
-        let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
+        let task = store.add_in(true, "Fix the login bug", "tester").unwrap();
 
         // the branch name is namespaced and linked to the task by its uid
         start_in(&store, &task.uid[..7], None, "main").unwrap();
@@ -526,13 +494,13 @@ mod tests {
         assert_eq!(store.load_context(&taken).unwrap().len(), 1);
 
         // an explicit branch name overrides the slug
-        let task2 = store.add_in(None, "Another one", "tester").unwrap();
+        let task2 = store.add_in(true, "Another one", "tester").unwrap();
         start_in(&store, &task2.uid[..7], Some("custom".into()), "main").unwrap();
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), "custom");
         assert_eq!(store.load_context("custom").unwrap().len(), 1);
 
         // a useless description falls back to the bare uid prefix
-        let task3 = store.add_in(None, "###", "tester").unwrap();
+        let task3 = store.add_in(true, "###", "tester").unwrap();
         start_in(&store, &task3.uid[..7], None, "main").unwrap();
         assert_eq!(
             git::current_branch_in(dir.path()).unwrap(),
@@ -543,11 +511,11 @@ mod tests {
     #[test]
     fn start_fails_when_the_branch_already_exists() {
         let (dir, store) = git_repo();
-        let task = store.add_in(None, "Fix the login bug", "tester").unwrap();
+        let task = store.add_in(true, "Fix the login bug", "tester").unwrap();
         start_in(&store, &task.uid[..7], None, "main").unwrap();
         let taken = format!("t/{}-fix-the-login-bug", &task.uid[..7]);
 
-        let task2 = store.add_in(None, "Fix the login bug again", "tester").unwrap();
+        let task2 = store.add_in(true, "Fix the login bug again", "tester").unwrap();
         // the generated name is free, but an existing name must fail
         assert!(start_in(&store, &task2.uid[..7], Some(taken.clone()), "main").is_err());
         // nothing moved: the second task is still in the backlog

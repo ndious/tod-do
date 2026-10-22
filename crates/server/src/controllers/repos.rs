@@ -22,8 +22,6 @@ pub struct AddRepoParams {
 #[derive(Debug, Deserialize)]
 pub struct AddTaskParams {
     pub description: String,
-    #[serde(default)]
-    pub context: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +46,12 @@ pub struct DiffParams {
 pub struct TagParams {
     pub uid: String,
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StateParams {
+    pub uid: String,
+    pub state: String,
 }
 
 /// Open the store of a registered repository (mirror refresh first).
@@ -151,7 +155,8 @@ async fn delete_repo(
     format::empty()
 }
 
-/// Branch, backlog, contexts, plans and progress of a repository.
+/// Branch, states, plans and progress of a repository: the kanban
+/// board of the console, one column per state.
 #[debug_handler]
 async fn status(
     _auth: JWTWithUser<users::Model>,
@@ -160,30 +165,29 @@ async fn status(
 ) -> Result<Response> {
     let repo = find_repo(&ctx, id).await?;
     let store = open_store(&ctx, &repo).await?;
-    let project = dot::plan::Project::load(&store)
-        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
     let branch = store
         .branch()
         .map_err(|e| Error::string(&format!("cannot read the branch: {e:#}")))?;
-    let backlog = store.load_backlog().map_err(wrap)?;
-    let contexts = store.contexts().map_err(wrap)?;
 
-    let status = Status {
+    let mut states = Vec::new();
+    for (name, tasks) in store.states().map_err(wrap)? {
+        let mut views = Vec::new();
+        for task in &tasks {
+            let dir = store.locate(&task.uid).map_err(wrap)?.1;
+            let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+            views.push(task_views::task_view(task, &name, &plan));
+        }
+        states.push(task_views::StateView { name, tasks: views });
+    }
+
+    format::json(Status {
         repo: repo.name,
         branch,
-        backlog: backlog.iter().map(|t| task_views::task_view(t, "backlog", &project)).collect(),
-        contexts: contexts
-            .iter()
-            .map(|(name, tasks)| task_views::ContextView {
-                name: name.clone(),
-                tasks: tasks.iter().map(|t| task_views::task_view(t, name, &project)).collect(),
-            })
-            .collect(),
-    };
-    format::json(status)
+        states,
+    })
 }
 
-/// Create a task in a context (or in the backlog).
+/// Create a task in the backlog.
 #[debug_handler]
 async fn add_task(
     _auth: JWTWithUser<users::Model>,
@@ -193,10 +197,12 @@ async fn add_task(
 ) -> Result<Response> {
     let repo = find_repo(&ctx, id).await?;
     let store = open_store(&ctx, &repo).await?;
-    let task = store.add_in(params.context.as_deref(), params.description.trim(), "web").map_err(wrap)?;
-    let project = dot::plan::Project::load(&store)
-        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
-    format::json(task_views::task_view(&task, &params.context.unwrap_or("backlog".into()), &project))
+    let task = store
+        .add_in(true, params.description.trim(), "web")
+        .map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+    format::json(task_views::task_view(&task, "backlog", &plan))
 }
 
 /// Add a step to a task's plan.
@@ -209,13 +215,14 @@ async fn add_sub(
 ) -> Result<Response> {
     let repo = find_repo(&ctx, id).await?;
     let store = open_store(&ctx, &repo).await?;
-    let (context, task) = store.find_task(&params.uid).map_err(wrap)?;
-    let mut project = dot::plan::Project::load(&store)
-        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
-    project.add_step(&task.uid, params.text.trim());
-    project.save(&store).map_err(wrap)?;
-    refresh_brief(&store, &task, &context)?;
-    format::json(task_views::task_view(&task, &context, &project))
+    let (state, task) = store.find_task(&params.uid).map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    let mut plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+    plan.add_step(params.text.trim());
+    dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
+    store.commit("tod: update plan").map_err(wrap)?;
+    refresh_brief(&store, &task, &state)?;
+    format::json(task_views::task_view(&task, &state, &plan))
 }
 
 /// Toggle a step of a task's plan.
@@ -228,13 +235,31 @@ async fn check_step(
 ) -> Result<Response> {
     let repo = find_repo(&ctx, id).await?;
     let store = open_store(&ctx, &repo).await?;
-    let (context, task) = store.find_task(&params.uid).map_err(wrap)?;
-    let mut project = dot::plan::Project::load(&store)
-        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
-    project.check_step(&task.uid, params.number).map_err(wrap)?;
-    project.save(&store).map_err(wrap)?;
-    refresh_brief(&store, &task, &context)?;
-    format::json(task_views::task_view(&task, &context, &project))
+    let (state, task) = store.find_task(&params.uid).map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    let mut plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+    plan.check_step(params.number).map_err(wrap)?;
+    dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
+    store.commit("tod: update plan").map_err(wrap)?;
+    refresh_brief(&store, &task, &state)?;
+    format::json(task_views::task_view(&task, &state, &plan))
+}
+
+/// Move a task to another state (the kanban columns).
+#[debug_handler]
+async fn set_state(
+    _auth: JWTWithUser<users::Model>,
+    State(ctx): State<AppContext>,
+    Path(id): Path<i64>,
+    Json(params): Json<StateParams>,
+) -> Result<Response> {
+    let repo = find_repo(&ctx, id).await?;
+    let store = open_store(&ctx, &repo).await?;
+    let task = store.set_state(&params.uid, &params.state).map_err(wrap)?;
+    let (state, task) = store.find_task(&task.uid).map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+    format::json(task_views::task_view(&task, &state, &plan))
 }
 
 /// The code changes of a task's branch (its context) compared to a
@@ -267,22 +292,23 @@ async fn set_tags(
     let repo = find_repo(&ctx, id).await?;
     let store = open_store(&ctx, &repo).await?;
     let task = store.set_tags(&params.uid, params.tags).map_err(wrap)?;
-    let project = dot::plan::Project::load(&store)
-        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
-    let (context, _) = store.find_task(&task.uid).map_err(wrap)?;
-    format::json(task_views::task_view(&task, &context, &project))
+    let (state, task) = store.find_task(&task.uid).map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+    format::json(task_views::task_view(&task, &state, &plan))
 }
 
 /// Regenerate the spec markdown, but only if it already exists.
 fn refresh_brief(
     store: &dot::store::Store,
     task: &dot::task::Task,
-    context: &str,
+    state: &str,
 ) -> Result<()> {
-    if store.md_dir().join(format!("{}.md", task.uid)).is_file() {
-        let project = dot::plan::Project::load(store).map_err(wrap)?;
-        let plan = project.plan(&task.uid).cloned().unwrap_or_default();
-        dot::brief::write_brief(store, task, context, &plan).map_err(wrap)?;
+    let dir = store.locate(&task.uid).map_err(wrap)?.1;
+    if dir.join(dot::brief::SPEC_FILE).is_file() {
+        let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
+        dot::brief::write_brief(&dir, task, state, &plan).map_err(wrap)?;
+        store.commit(&format!("tod: brief {}", &task.uid[..7])).map_err(wrap)?;
     }
     Ok(())
 }
@@ -299,6 +325,7 @@ pub fn routes() -> Routes {
         .add("/{id}/sub", post(add_sub))
         .add("/{id}/check", post(check_step))
         .add("/{id}/tag", post(set_tags))
+        .add("/{id}/state", post(set_state))
 }
 
 /// Wrap an anyhow error (the dot crate's) as a loco error.

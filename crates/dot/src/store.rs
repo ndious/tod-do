@@ -11,6 +11,13 @@ use crate::task::Task;
 /// The git branch holding the tod storage, and nothing else.
 pub const TOD_BRANCH: &str = "tod";
 
+/// The states a task goes through, in lifecycle order. The state of
+/// a task is the directory holding its task directory.
+pub const STATES: [&str; 6] = ["backlog", "todo", "review", "test", "done", "canceled"];
+
+/// The states of a task being worked on a branch.
+pub const ACTIVE_STATES: [&str; 3] = ["todo", "review", "test"];
+
 /// Name of the hidden worktree where the tod branch is checked out,
 /// inside the repository's `.git` directory.
 const WORKTREE_DIR: &str = "tod-worktree";
@@ -87,27 +94,25 @@ impl Store {
         &self.tod_dir
     }
 
-    pub fn todo_dir(&self) -> PathBuf {
-        self.tod_dir.join("todo")
+    /// The directory holding the tasks of one state: one
+    /// subdirectory per task, named by its uid.
+    pub fn state_dir(&self, state: &str) -> Result<PathBuf> {
+        if !STATES.contains(&state) {
+            bail!("unknown state '{state}' (states: {})", STATES.join(", "));
+        }
+        Ok(self.tod_dir.join(state))
     }
 
-    pub fn backlog_dir(&self) -> PathBuf {
-        self.tod_dir.join("backlog")
-    }
-
-    /// The central plan document of the project.
-    pub fn plan_path(&self) -> PathBuf {
-        self.tod_dir.join(crate::plan::PLAN_FILE)
-    }
-
-    /// The folder holding the generated spec markdowns.
-    pub fn md_dir(&self) -> PathBuf {
-        self.tod_dir.join("md")
-    }
-
-    /// Directory holding the tasks of one branch (context).
-    pub fn context_dir(&self, branch: &str) -> PathBuf {
-        self.todo_dir().join(sanitize(branch))
+    /// The directory of one task, wherever it lives. Returns its
+    /// state too.
+    pub fn locate(&self, uid: &str) -> Result<(String, PathBuf)> {
+        for state in STATES {
+            let dir = self.tod_dir.join(state).join(uid);
+            if dir.is_dir() {
+                return Ok((state.to_string(), dir));
+            }
+        }
+        bail!("no task found for '{uid}'")
     }
 
     /// Current branch of the repository behind this store: the user's
@@ -184,7 +189,9 @@ impl Store {
     /// nothing changed. The push to origin is deferred to the end of
     /// the command (see `Drop for Store`), so a command making
     /// several commits still performs a single network round trip.
-    pub(crate) fn commit(&self, message: &str) -> Result<()> {
+    /// Public: the CLI writes plan.md and spec.md directly and
+    /// commits them through the store.
+    pub fn commit(&self, message: &str) -> Result<()> {
         if git::commit_all(&self.tod_dir, message)? {
             self.dirty.set(true);
         }
@@ -303,6 +310,15 @@ impl Store {
                 let _ = git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH);
                 self.mark_push();
             }
+        } else if git::fetch_ref(&self.tod_dir, "origin", TOD_BRANCH).is_ok() {
+            // a mirror (the server) has no remote-tracking refs, and
+            // its 'tod' branch is checked out in the worktree:
+            // --update-head-ok lets the fetch move the ref directly,
+            // but the working tree is not touched. Fast-forward when
+            // the fetch did not, then resync the tree — the worktree
+            // is machine-managed, safe to hard reset.
+            let _ = git::merge_ff_only(&self.tod_dir, "FETCH_HEAD");
+            git::reset_hard(&self.tod_dir)?;
         }
         // mark the pull as fresh
         if let Some(marker) = self.pull_marker() {
@@ -311,18 +327,31 @@ impl Store {
         Ok(())
     }
 
-    /// Create a new task in the current context, or in the backlog.
+    /// Create a new task in the current branch's todo state, or in
+    /// the backlog.
     pub fn add(&self, description: &str, author: &str, backlog: bool) -> Result<Task> {
         self.ensure_init()?;
-        let context = if backlog { None } else { Some(self.branch()?) };
-        self.add_in(context.as_deref(), description, author)
+        let branch = if backlog { None } else { Some(self.branch()?) };
+        let task = self.create(description, author, branch, if backlog { "backlog" } else { "todo" })?;
+        Ok(task)
     }
 
-    /// Create a new task in an explicit context, or in the backlog
-    /// when the context is None. Used by the server, which manages
-    /// every context at once.
-    pub fn add_in(&self, context: Option<&str>, description: &str, author: &str) -> Result<Task> {
+    /// Create a new task. Used by the server, which only adds to the
+    /// backlog.
+    pub fn add_in(&self, backlog: bool, description: &str, author: &str) -> Result<Task> {
         self.ensure_init()?;
+        let branch = if backlog { None } else { Some(self.branch()?) };
+        self.create(description, author, branch, if backlog { "backlog" } else { "todo" })
+    }
+
+    /// Create a task directory of the given state, with its task.tod.
+    fn create(
+        &self,
+        description: &str,
+        author: &str,
+        branch: Option<String>,
+        state: &str,
+    ) -> Result<Task> {
         let now = chrono::Utc::now();
         let task = Task {
             uid: new_uid(description),
@@ -330,105 +359,130 @@ impl Store {
             author: author.to_string(),
             created: now,
             updated: now,
-            done: false,
-            rfr: false,
+            branch,
             tags: Vec::new(),
             content: None,
         };
-        let dir = match context {
-            Some(branch) => self.context_dir(branch),
-            None => self.backlog_dir(),
-        };
+        let dir = self.state_dir(state)?.join(&task.uid);
         fs::create_dir_all(&dir)?;
         write_task(&dir, &task)?;
         self.commit(&format!("tod: add {} {}", &task.uid[..7], description))?;
         Ok(task)
     }
 
+    /// The tasks of one state, oldest first. A missing directory is
+    /// an empty list; a corrupted file is skipped with a warning.
+    pub fn load_state(&self, state: &str) -> Result<Vec<Task>> {
+        let dir = self.state_dir(state)?;
+        let mut tasks = Vec::new();
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(tasks),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path().join(crate::task::TASK_FILE);
+            if !path.is_file() {
+                continue;
+            }
+            let uid = entry.file_name().to_string_lossy().to_string();
+            match fs::read_to_string(&path) {
+                Ok(content) => match Task::parse(&uid, &content) {
+                    Ok(task) => tasks.push(task),
+                    Err(_) => eprintln!("warning: skipping invalid task file {}", path.display()),
+                },
+                Err(_) => eprintln!("warning: cannot read {}", path.display()),
+            }
+        }
+        tasks.sort_by(|a, b| a.created.cmp(&b.created));
+        Ok(tasks)
+    }
+
     /// Load the backlog.
     pub fn load_backlog(&self) -> Result<Vec<Task>> {
         self.ensure_init()?;
-        load_dir(&self.backlog_dir())
+        self.load_state("backlog")
     }
 
-    /// Load the tasks of one context.
+    /// Load the tasks of one working branch, across the active states.
     pub fn load_context(&self, branch: &str) -> Result<Vec<Task>> {
         self.ensure_init()?;
-        load_dir(&self.context_dir(branch))
+        let mut tasks = Vec::new();
+        for state in ACTIVE_STATES {
+            tasks.extend(
+                self.load_state(state)?
+                    .into_iter()
+                    .filter(|t| t.branch.as_deref() == Some(branch)),
+            );
+        }
+        Ok(tasks)
     }
 
-    /// Every context (branch) holding at least one task, sorted by name.
-    pub fn contexts(&self) -> Result<Vec<(String, Vec<Task>)>> {
+    /// Every state with its tasks, in lifecycle order.
+    pub fn states(&self) -> Result<Vec<(String, Vec<Task>)>> {
         self.ensure_init()?;
         let mut out = Vec::new();
-        if !self.todo_dir().is_dir() {
-            return Ok(out);
+        for state in STATES {
+            out.push((state.to_string(), self.load_state(state)?));
         }
-        for entry in fs::read_dir(self.todo_dir())?.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let tasks = load_dir(&path)?;
-                if !tasks.is_empty() {
-                    let name = desanitize(&entry.file_name().to_string_lossy());
-                    out.push((name, tasks));
-                }
-            }
-        }
-        out.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(out)
     }
 
-    /// Find a task by (possibly partial) identifier, searching the
-    /// backlog first, then every context.
-    /// Returns (location, task) where location is a branch or "backlog".
+    /// Every working branch holding at least one active task,
+    /// sorted by name.
+    pub fn contexts(&self) -> Result<Vec<(String, Vec<Task>)>> {
+        self.ensure_init()?;
+        let mut map: std::collections::BTreeMap<String, Vec<Task>> = Default::default();
+        for state in ACTIVE_STATES {
+            for task in self.load_state(state)? {
+                if let Some(branch) = task.branch.clone() {
+                    map.entry(branch).or_default().push(task);
+                }
+            }
+        }
+        Ok(map.into_iter().collect())
+    }
+
+    /// Find a task by (possibly partial) identifier, searching every
+    /// state. Returns (state, task).
     pub fn find_task(&self, identifier: &str) -> Result<(String, Task)> {
         self.ensure_init()?;
-        let backlog = self.load_backlog()?;
-        if let Ok(task) = match_task(&backlog, identifier) {
-            return Ok(("backlog".to_string(), task.clone()));
-        }
-        for (context, tasks) in self.contexts()? {
-            if let Ok(task) = match_task(&tasks, identifier) {
-                return Ok((context, task.clone()));
+        for state in STATES {
+            if let Ok(task) = match_task(&self.load_state(state)?, identifier) {
+                return Ok((state.to_string(), task.clone()));
             }
         }
         bail!("no task found with identifier '{identifier}'")
     }
 
-    /// Mark a task of the current context as complete.
-    /// Mark a task as complete, wherever it lives — the current
-    /// context, another context, or the backlog.
-    pub fn complete(&self, identifier: &str) -> Result<Task> {
-        let task = self.mark(identifier, |task| {
-            if task.done {
-                bail!("task #{} is already complete", &task.uid[..5]);
-            }
-            task.done = true;
-            Ok(())
-        })?;
-        self.commit(&format!(
-            "tod: complete {} {}",
-            &task.uid[..7],
-            task.description
-        ))?;
+    /// Move a task to another state, wherever it lives. The whole
+    /// task directory (task.tod, plan.md, spec.md) moves with it.
+    pub fn set_state(&self, identifier: &str, state: &str) -> Result<Task> {
+        let target = self.state_dir(state)?;
+        let (_, task) = self.find_task(identifier)?;
+        let (_, from) = self.locate(&task.uid)?;
+        fs::create_dir_all(&target)?;
+        fs::rename(&from, target.join(&task.uid))
+            .with_context(|| format!("cannot move task #{}", &task.uid[..7]))?;
+        self.commit(&format!("tod: state {} -> {state}", &task.uid[..7]))?;
         Ok(task)
     }
 
-    /// Mark a task as ready for review, wherever it lives.
+    /// A task is complete: it moves to the done state.
+    pub fn complete(&self, identifier: &str) -> Result<Task> {
+        let (state, task) = self.find_task(identifier)?;
+        if state == "done" {
+            bail!("task #{} is already complete", &task.uid[..5]);
+        }
+        self.set_state(identifier, "done")
+    }
+
+    /// A task is ready for review: it moves to the review state.
     pub fn ready_for_review(&self, identifier: &str) -> Result<Task> {
-        let task = self.mark(identifier, |task| {
-            if task.done {
-                bail!("task #{} is already complete", &task.uid[..5]);
-            }
-            task.rfr = true;
-            Ok(())
-        })?;
-        self.commit(&format!(
-            "tod: rfr {} {}",
-            &task.uid[..7],
-            task.description
-        ))?;
-        Ok(task)
+        let (state, task) = self.find_task(identifier)?;
+        if state == "done" {
+            bail!("task #{} is already complete", &task.uid[..5]);
+        }
+        self.set_state(identifier, "review")
     }
 
     /// Replace the tags of a task, wherever it lives. An empty list
@@ -446,106 +500,86 @@ impl Store {
         Ok(task)
     }
 
-    /// Find a task anywhere (backlog or context) and apply a change
-    /// to it, writing it back where it lives.
+    /// Find a task anywhere and apply a change to its task.tod,
+    /// writing it back where it lives.
     fn mark(
         &self,
         identifier: &str,
         change: impl FnOnce(&mut Task) -> Result<()>,
     ) -> Result<Task> {
-        self.ensure_init()?;
-        let (context, mut task) = self.find_task(identifier)?;
+        let (state, task) = self.find_task(identifier)?;
+        let dir = self.state_dir(&state)?.join(&task.uid);
+        let mut task = task;
         change(&mut task)?;
         task.updated = chrono::Utc::now();
-        let dir = match context.as_str() {
-            "backlog" => self.backlog_dir(),
-            context => self.context_dir(context),
-        };
         write_task(&dir, &task)?;
         Ok(task)
     }
 
-    /// Delete a task from the current context, or from the backlog.
-    pub fn remove(&self, identifier: &str, backlog: bool) -> Result<Task> {
-        self.ensure_init()?;
-        let dir = if backlog {
-            self.backlog_dir()
-        } else {
-            self.context_dir(&self.branch()?)
-        };
-        let tasks = load_dir(&dir)?;
-        let task = match_task(&tasks, identifier)?.clone();
-        fs::remove_file(dir.join(&task.uid))?;
-        self.commit(&format!("tod: remove {} {}", &task.uid[..7], task.description))?;
-        Ok(task)
+    /// Give a task its working branch and move it to the todo
+    /// state: the storage part of `tod start`.
+    pub fn start_task(&self, identifier: &str, branch: &str) -> Result<Task> {
+        let task = self.mark(identifier, |task| {
+            task.branch = Some(branch.to_string());
+            Ok(())
+        })?;
+        self.commit(&format!("tod: start {} in {branch}", &task.uid[..7]))?;
+        self.set_state(identifier, "todo")
     }
 
-    /// Move a task between the backlog and the current context.
+    /// Cancel a task: it moves to the canceled state — its directory
+    /// (task.tod, plan.md, spec.md) is kept for the record.
+    pub fn remove(&self, identifier: &str) -> Result<Task> {
+        self.set_state(identifier, "canceled")
+    }
+
+    /// Move a task back to the backlog, or to the todo state of the
+    /// current branch.
     pub fn move_task(&self, identifier: &str, to_backlog: bool) -> Result<Task> {
-        self.ensure_init()?;
-        let branch = self.branch()?;
-        let (from, to) = if to_backlog {
-            (self.context_dir(&branch), self.backlog_dir())
+        if to_backlog {
+            self.set_state(identifier, "backlog")
         } else {
-            (self.backlog_dir(), self.context_dir(&branch))
-        };
-        let tasks = load_dir(&from)?;
-        let task = match_task(&tasks, identifier)?.clone();
-        fs::create_dir_all(&to)?;
-        fs::rename(from.join(&task.uid), to.join(&task.uid))?;
-        let destination = if to_backlog { "backlog" } else { "context" };
-        self.commit(&format!("tod: move {} to {destination}", &task.uid[..7]))?;
-        Ok(task)
-    }
-
-    /// Move a task from the backlog or any context into an explicit
-    /// context. Used by 'tod start', which gives a task its own
-    /// working branch.
-    pub fn move_task_to(&self, identifier: &str, to_context: &str) -> Result<Task> {
-        self.ensure_init()?;
-        let (from_context, task) = self.find_task(identifier)?;
-        let from = match from_context.as_str() {
-            "backlog" => self.backlog_dir(),
-            context => self.context_dir(context),
-        };
-        if from == self.context_dir(to_context) {
-            return Ok(task); // already in the target context
+            self.start_task(identifier, &self.branch()?)
         }
-        let to = self.context_dir(to_context);
-        fs::create_dir_all(&to)?;
-        fs::rename(from.join(&task.uid), to.join(&task.uid))
-            .with_context(|| format!("cannot move task #{}", &task.uid[..7]))?;
-        self.commit(&format!("tod: start {} in {to_context}", &task.uid[..7]))?;
-        Ok(task)
     }
 
-    /// Close a context: delete every task of the branch and its folder.
+    /// Close a context: every active task of the branch is canceled.
     pub fn resolve(&self, context: &str) -> Result<usize> {
-        self.ensure_init()?;
-        let dir = self.context_dir(context);
-        if !dir.is_dir() {
-            bail!("unknown context '{context}'");
+        let tasks = self.load_context(context)?;
+        for task in &tasks {
+            self.set_state(&task.uid, "canceled")?;
         }
-        let count = load_dir(&dir)?.len();
-        fs::remove_dir_all(&dir).with_context(|| format!("cannot remove {}", dir.display()))?;
-        self.commit(&format!("tod: resolve context {context}"))?;
-        Ok(count)
+        self.commit(&format!("tod: resolve {context}"))?;
+        Ok(tasks.len())
     }
 
-    /// Export the whole database (backlog + every context) as a JSON file.
-    /// Returns (backlog size, context count).
+    /// Complete every task of a working branch — the storage part of
+    /// `tod finish`.
+    pub fn complete_context(&self, context: &str) -> Result<usize> {
+        let tasks = self.load_context(context)?;
+        for task in &tasks {
+            self.set_state(&task.uid, "done")?;
+        }
+        self.commit(&format!("tod: finish {context}"))?;
+        Ok(tasks.len())
+    }
+
+    /// Export the whole database, state by state, as a JSON file.
+    /// Returns (task count, state count).
     pub fn export(&self, output: &str) -> Result<(usize, usize)> {
         self.ensure_init()?;
-        let backlog = self.load_backlog()?;
-        let contexts = self.contexts()?;
+        let states = self.states()?;
         let mut map = serde_json::Map::new();
-        for (name, tasks) in &contexts {
-            map.insert(name.clone(), serde_json::to_value(tasks)?);
+        for (state, tasks) in &states {
+            map.insert(state.clone(), serde_json::to_value(tasks)?);
         }
-        let db = serde_json::json!({ "backlog": backlog, "contexts": map });
+        let db = serde_json::json!({ "states": map });
         fs::write(output, serde_json::to_string_pretty(&db)?)
             .with_context(|| format!("cannot write {output}"))?;
-        Ok((backlog.len(), contexts.len()))
+        Ok((
+            states.iter().map(|(_, t)| t.len()).sum(),
+            states.len(),
+        ))
     }
 }
 
@@ -576,33 +610,6 @@ impl Drop for Store {
     }
 }
 
-/// Load every task file from a directory. The file name is the uid.
-/// A missing directory is an empty task list; a corrupted file is
-/// skipped with a warning instead of failing the whole command.
-pub fn load_dir(dir: &Path) -> Result<Vec<Task>> {
-    let mut tasks = Vec::new();
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(tasks),
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let uid = entry.file_name().to_string_lossy().to_string();
-        match fs::read_to_string(&path) {
-            Ok(content) => match Task::parse(&uid, &content) {
-                Ok(task) => tasks.push(task),
-                Err(_) => eprintln!("warning: skipping invalid task file {}", path.display()),
-            },
-            Err(_) => eprintln!("warning: cannot read {}", path.display()),
-        }
-    }
-    tasks.sort_by(|a, b| a.created.cmp(&b.created));
-    Ok(tasks)
-}
-
 /// Match a (possibly partial) identifier against task uids, git-style.
 /// Returns the unique match, or an error when nothing or several match.
 pub fn match_task<'a>(tasks: &'a [Task], identifier: &str) -> Result<&'a Task> {
@@ -617,21 +624,12 @@ pub fn match_task<'a>(tasks: &'a [Task], identifier: &str) -> Result<&'a Task> {
     }
 }
 
-/// Write a task to its file inside 'dir'.
-pub fn write_task(dir: &Path, task: &Task) -> Result<()> {
-    let path = dir.join(&task.uid);
+/// Write the task.tod of a task into its own directory.
+pub fn write_task(task_dir: &Path, task: &Task) -> Result<()> {
+    let path = task_dir.join(crate::task::TASK_FILE);
     fs::write(&path, task.stringify())
         .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
-}
-
-/// Branch names may contain '/' which cannot be a single directory name.
-pub fn sanitize(branch: &str) -> String {
-    branch.replace('/', "--")
-}
-
-pub fn desanitize(dir: &str) -> String {
-    dir.replace("--", "/")
 }
 
 fn new_uid(description: &str) -> String {
@@ -667,13 +665,6 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_round_trip() {
-        assert_eq!(sanitize("feature/fix"), "feature--fix");
-        assert_eq!(sanitize("main"), "main");
-        assert_eq!(desanitize(&sanitize("feature/fix")), "feature/fix");
-    }
-
-    #[test]
     fn uids_are_unique() {
         // Same description, consecutive calls: uids must still differ.
         assert_ne!(new_uid("same"), new_uid("same"));
@@ -687,8 +678,7 @@ mod tests {
             author: "a".to_string(),
             created: chrono::Utc::now(),
             updated: chrono::Utc::now(),
-            done: false,
-            rfr: false,
+            branch: None,
             tags: Vec::new(),
             content: None,
         };
@@ -702,8 +692,11 @@ mod tests {
     }
 
     #[test]
-    fn load_dir_on_missing_directory_is_empty() {
-        assert!(load_dir(Path::new("/nonexistent-tod-dir")).unwrap().is_empty());
+    fn load_state_on_missing_directory_is_empty() {
+        let (_dir, store) = git_repo();
+        store.init().unwrap();
+        assert!(store.load_state("review").unwrap().is_empty());
+        assert!(store.state_dir("nope").is_err());
     }
 
     #[test]
@@ -740,51 +733,59 @@ mod tests {
         std::fs::remove_dir_all(&tod_dir).unwrap();
         assert!(!tod_dir.exists());
 
-        store.add_in(Some("main"), "still works", "tester").unwrap();
+        store.add_in(false, "still works", "tester").unwrap();
         assert!(tod_dir.join(".git").is_file());
         assert_eq!(store.load_context("main").unwrap().len(), 1);
     }
 
     #[test]
-    fn add_in_creates_tasks_in_context_and_backlog() {
+    fn add_creates_tasks_in_backlog_and_todo() {
         let (_dir, store) = git_repo();
         store.init().unwrap();
 
-        let in_context = store.add_in(Some("feature/server"), "in context", "tester").unwrap();
-        let in_backlog = store.add_in(None, "in backlog", "tester").unwrap();
+        let in_todo = store.add_in(false, "in todo", "tester").unwrap();
+        let in_backlog = store.add_in(true, "in backlog", "tester").unwrap();
 
-        assert!(store.context_dir("feature/server").join(&in_context.uid).is_file());
-        assert!(store.backlog_dir().join(&in_backlog.uid).is_file());
-        assert_eq!(store.load_context("feature/server").unwrap().len(), 1);
+        // one directory per task, named by its uid, holding task.tod
+        let task_dir = store.state_dir("todo").unwrap().join(&in_todo.uid);
+        assert!(task_dir.join(crate::task::TASK_FILE).is_file());
+        assert!(store.state_dir("backlog").unwrap().join(&in_backlog.uid).is_dir());
+        assert_eq!(store.load_context("main").unwrap().len(), 1);
         assert_eq!(store.load_backlog().unwrap().len(), 1);
 
-        let (context, task) = store.find_task(&in_context.uid).unwrap();
-        assert_eq!(context, "feature/server");
-        assert_eq!(task.description, "in context");
+        let (state, task) = store.find_task(&in_todo.uid).unwrap();
+        assert_eq!(state, "todo");
+        assert_eq!(task.description, "in todo");
+        assert_eq!(task.branch.as_deref(), Some("main"));
     }
 
     #[test]
     fn mutations_are_committed_to_the_tod_branch() {
         let (dir, store) = git_repo();
         store.init().unwrap();
-        let task = store.add_in(None, "committed task", "tester").unwrap();
+        let task = store.add_in(true, "committed task", "tester").unwrap();
 
         let log = git(dir.path(), &["log", "--format=%s", TOD_BRANCH]);
         assert!(log.contains("tod: init"));
         assert!(log.contains(&format!("tod: add {}", &task.uid[..7])));
 
         // complete works from anywhere: a backlog task is completed
-        // without switching context
-        let done = store.complete(&task.uid[..7]).unwrap();
-        assert!(done.done && !done.rfr);
-        assert!(store.load_backlog().unwrap()[0].done);
+        // without switching branch — it moves to the done state
+        store.complete(&task.uid[..7]).unwrap();
+        assert_eq!(store.find_task(&task.uid).unwrap().0, "done");
+        assert!(store.load_backlog().unwrap().is_empty());
 
-        // ready for review too, and a second complete fails
-        let other = store.add_in(None, "another task", "tester").unwrap();
-        let reviewed = store.ready_for_review(&other.uid[..7]).unwrap();
-        assert!(reviewed.rfr && !reviewed.done);
-        assert!(store.complete(&other.uid[..7]).unwrap().done);
-        store.complete(&other.uid[..7]).unwrap_err(); // already complete
+        // ready for review, test state, and cancel
+        let other = store.add_in(true, "another task", "tester").unwrap();
+        store.ready_for_review(&other.uid[..7]).unwrap();
+        assert_eq!(store.find_task(&other.uid).unwrap().0, "review");
+        store.set_state(&other.uid, "test").unwrap();
+        assert_eq!(store.find_task(&other.uid).unwrap().0, "test");
+        store.remove(&other.uid).unwrap();
+        assert_eq!(store.find_task(&other.uid).unwrap().0, "canceled");
+
+        // a complete task cannot be completed again
+        store.complete(&task.uid).unwrap_err();
     }
 
     #[test]
@@ -793,43 +794,49 @@ mod tests {
         // user content on the working branch
         std::fs::write(dir.path().join("code.txt"), "user code").unwrap();
         store.init().unwrap();
-        store.add_in(Some("main"), "a task", "tester").unwrap();
+        store.add_in(true, "a task", "tester").unwrap();
 
         let files = git(dir.path(), &["ls-tree", "-r", "--name-only", TOD_BRANCH]);
-        assert_eq!(files, format!("todo/main/{}", store.load_context("main").unwrap()[0].uid));
+        let uid = store.load_backlog().unwrap()[0].uid.clone();
+        assert_eq!(files, format!("backlog/{uid}/task.tod"));
         assert!(!files.contains("code.txt"));
 
         // and the user's working tree is untouched
-        assert!(!dir.path().join("todo").exists());
+        assert!(!dir.path().join("backlog").exists());
     }
 
     #[test]
-    fn move_task_to_moves_between_backlog_and_contexts() {
+    fn start_task_gives_the_branch_and_the_todo_state() {
         let (_dir, store) = git_repo();
         store.init().unwrap();
-        let backlog_task = store.add_in(None, "from backlog", "tester").unwrap();
-        let context_task = store.add_in(Some("main"), "from context", "tester").unwrap();
+        let backlog_task = store.add_in(true, "from backlog", "tester").unwrap();
+        let other = store.add_in(true, "from context", "tester").unwrap();
 
-        // backlog -> context
-        store.move_task_to(&backlog_task.uid[..7], "fix-login").unwrap();
-        assert!(store.load_backlog().unwrap().is_empty());
+        // backlog -> working branch
+        store.start_task(&backlog_task.uid[..7], "fix-login").unwrap();
+        assert_eq!(store.load_backlog().unwrap().len(), 1); // 'other' stays
         assert_eq!(store.load_context("fix-login").unwrap().len(), 1);
+        assert_eq!(store.find_task(&backlog_task.uid).unwrap().0, "todo");
 
-        // context -> other context
-        store.move_task_to(&context_task.uid[..7], "fix-login").unwrap();
-        assert!(store.load_context("main").unwrap().is_empty());
+        // a second task joins the same branch
+        store.start_task(&other.uid[..7], "fix-login").unwrap();
         assert_eq!(store.load_context("fix-login").unwrap().len(), 2);
 
-        // moving to the context the task is already in is a no-op
-        store.move_task_to(&context_task.uid[..7], "fix-login").unwrap();
+        // starting the task of the branch again is a no-op
+        store.start_task(&other.uid[..7], "fix-login").unwrap();
         assert_eq!(store.load_context("fix-login").unwrap().len(), 2);
+
+        // finishing the branch completes its tasks
+        assert_eq!(store.complete_context("fix-login").unwrap(), 2);
+        assert_eq!(store.find_task(&backlog_task.uid).unwrap().0, "done");
+        assert!(store.load_context("fix-login").unwrap().is_empty());
     }
 
     #[test]
     fn tod_branch_is_adopted_after_a_clone() {
         let (origin, store) = git_repo();
         store.init().unwrap();
-        store.add_in(None, "shared task", "tester").unwrap();
+        store.add_in(true, "shared task", "tester").unwrap();
 
         let clone_dir = tempfile::tempdir().unwrap();
         let out = Command::new("git")
@@ -869,7 +876,7 @@ mod tests {
         {
             let store_a = Store::new(dir_a.path());
             store_a.init().unwrap();
-            store_a.add_in(None, "from A", "A").unwrap();
+            store_a.add_in(true, "from A", "A").unwrap();
         }
         assert!(git::ref_exists(&server, "refs/heads/tod").unwrap());
 
@@ -883,7 +890,7 @@ mod tests {
         {
             let store_b = Store::new(dir_b.path());
             assert_eq!(store_b.load_backlog().unwrap().len(), 1);
-            store_b.add_in(None, "from B", "B").unwrap();
+            store_b.add_in(true, "from B", "B").unwrap();
         }
 
         // machine A's next command pulls B's task once the freshness
@@ -916,8 +923,8 @@ mod tests {
         {
             let store = Store::new(dir.path());
             store.init().unwrap();
-            store.add_in(None, "first", "tester").unwrap();
-            store.add_in(None, "second", "tester").unwrap();
+            store.add_in(true, "first", "tester").unwrap();
+            store.add_in(true, "second", "tester").unwrap();
             // both commits are local: the remote is not touched yet
             assert!(!git::ref_exists(&server, "refs/heads/tod").unwrap());
         }
@@ -948,7 +955,7 @@ mod tests {
         {
             let store = Store::new(dir.path());
             store.init().unwrap();
-            store.add_in(None, "first", "tester").unwrap();
+            store.add_in(true, "first", "tester").unwrap();
         }
 
         // a pull leaves a freshness marker next to the worktree
@@ -994,7 +1001,7 @@ mod tests {
             let store = Store::new(dir.path());
             store.set_async_push(true);
             store.init().unwrap();
-            store.add_in(None, "pushed later", "tester").unwrap();
+            store.add_in(true, "pushed later", "tester").unwrap();
         }
         // the command is over: the background push lands on its own
         assert!(eventually(|| git::ref_exists(&server, "refs/heads/tod").unwrap()));
@@ -1023,7 +1030,7 @@ mod tests {
         {
             let store = Store::new(dir.path());
             store.init().unwrap();
-            store.add_in(None, "pushed once", "tester").unwrap();
+            store.add_in(true, "pushed once", "tester").unwrap();
         }
         assert!(eventually(|| {
             git(&server, &["rev-list", "--count", "tod"]) == "2"
@@ -1068,7 +1075,7 @@ mod tests {
         // a normal repository with tod data
         let (origin, store) = git_repo();
         store.init().unwrap();
-        store.add_in(Some("main"), "task in bare", "tester").unwrap();
+        store.add_in(false, "task in bare", "tester").unwrap();
 
         // a bare mirror of it — how the server stores repositories
         let bare = tempfile::tempdir().unwrap();
@@ -1091,7 +1098,7 @@ mod tests {
         assert_eq!(bare_store.load_context("main").unwrap().len(), 1);
 
         // mutations commit in the worktree attached to the bare repo
-        bare_store.add_in(None, "from the server", "web").unwrap();
+        bare_store.add_in(true, "from the server", "web").unwrap();
         assert_eq!(bare_store.load_backlog().unwrap().len(), 1);
         let git_dir = git::common_dir(&mirror).unwrap();
         assert!(git_dir.join("tod-worktree").join(".git").is_file());
@@ -1108,7 +1115,7 @@ mod tests {
         assert!(out.status.success(), "git remote add failed");
 
         store.init().unwrap();
-        store.add_in(None, "offline task", "tester").unwrap();
+        store.add_in(true, "offline task", "tester").unwrap();
         assert_eq!(store.load_backlog().unwrap().len(), 1);
     }
 }

@@ -1,49 +1,46 @@
-//! Spec markdown generation: the agent-facing brief of a task.
+//! Spec markdown generation: the agent-facing work description of a
+//! task, in the `spec.md` file of its directory.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 
 use crate::plan::Plan;
-use crate::store::Store;
 use crate::task::Task;
 use crate::types::ISO8601_FORMAT;
+
+/// Name of the spec file, inside the task directory.
+pub const SPEC_FILE: &str = "spec.md";
 
 /// Render the spec markdown of a task: a self-contained document
 /// (objective, status, plan with progress) that can be handed to a
 /// development agent.
-pub fn markdown(task: &Task, context: &str, plan: &Plan) -> String {
-    let status = if task.done { "complete" } else { "in progress" };
+pub fn markdown(task: &Task, state: &str, plan: &Plan) -> String {
     let short = &task.uid[..5];
 
     let mut md = String::new();
-    md.push_str(&format!("# {}
-
-", task.description));
-    md.push_str(&format!("- **UID**: {}
-", task.uid));
-    md.push_str(&format!("- **Context**: {context}
-"));
-    md.push_str(&format!("- **Status**: {status}
-"));
+    md.push_str(&format!("# {}\n\n", task.description));
+    md.push_str(&format!("- **UID**: {}\n", task.uid));
+    md.push_str(&format!("- **State**: {state}\n"));
+    if let Some(branch) = &task.branch {
+        md.push_str(&format!("- **Branch**: {branch}\n"));
+    }
+    if !task.tags.is_empty() {
+        md.push_str(&format!("- **Tags**: {}\n", task.tags.join(", ")));
+    }
     md.push_str(&format!(
-        "- **Created**: {}
-",
+        "- **Created**: {}\n",
         task.created.format(ISO8601_FORMAT)
     ));
     if !plan.is_empty() {
         md.push_str(&format!(
-            "- **Progress**: {}/{}
-",
+            "- **Progress**: {}/{}\n",
             plan.done_count(),
             plan.steps.len()
         ));
     }
-    md.push_str("
-## Plan
-
-");
+    md.push_str("\n## Plan\n\n");
     if plan.is_empty() {
         md.push_str(&format!(
             "- [ ] (no step yet — `tod sub {short} \"...\"`)\n"
@@ -51,27 +48,24 @@ pub fn markdown(task: &Task, context: &str, plan: &Plan) -> String {
     } else {
         for step in &plan.steps {
             let mark = if step.done { 'x' } else { ' ' };
-            md.push_str(&format!("- [{mark}] {}
-", step.text));
+            md.push_str(&format!("- [{mark}] {}\n", step.text));
         }
     }
     md
 }
 
-/// Write the spec markdown of a task into the .dot/md folder.
-pub fn write_brief(store: &Store, task: &Task, context: &str, plan: &Plan) -> Result<PathBuf> {
-    let dir = store.md_dir();
-    fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let path = dir.join(format!("{}.md", task.uid));
-    fs::write(&path, markdown(task, context, plan))
+/// Write the spec.md of a task, inside its directory.
+pub fn write_brief(task_dir: &Path, task: &Task, state: &str, plan: &Plan) -> Result<()> {
+    let path = task_dir.join(SPEC_FILE);
+    fs::write(&path, markdown(task, state, plan))
         .with_context(|| format!("cannot write {}", path.display()))?;
-    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
-    Ok(path)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use chrono::Utc;
 
     fn sample() -> Task {
@@ -81,53 +75,41 @@ mod tests {
             author: "tester".to_string(),
             created: Utc::now(),
             updated: Utc::now(),
-            done: false,
-            rfr: false,
-            tags: Vec::new(),
+            branch: Some("t/919fea9-fix-the-login-bug".to_string()),
+            tags: vec!["auth".to_string()],
             content: None,
         }
     }
 
     #[test]
-    fn markdown_contains_the_plan_with_progress() {
+    fn markdown_is_a_self_contained_brief() {
+        let mut plan = Plan::default();
+        plan.add_step("patch auth.rs");
+        let mut step = plan.steps[0].clone();
+        step.done = true;
+        plan.steps[0] = step;
         let task = sample();
-        let plan = Plan {
-            steps: vec![
-                Step { done: true, text: "investigate".into() },
-                Step { done: false, text: "fix it".into() },
-            ],
-        };
-        let md = markdown(&task, "feature/login", &plan);
-        assert!(md.starts_with("# Fix the login bug
 
-"));
-        assert!(md.contains("- **Context**: feature/login
-"));
-        assert!(md.contains("- **Status**: in progress
-"));
-        assert!(md.contains("- **Progress**: 1/2
-"));
-        assert!(md.contains("- [x] investigate
-"));
-        assert!(md.contains("- [ ] fix it
-"));
+        let md = markdown(&task, "todo", &plan);
+        assert!(md.contains("# Fix the login bug"));
+        assert!(md.contains("- **UID**: 919fea91dd3193458488c70d168c5515362cbada"));
+        assert!(md.contains("- **State**: todo"));
+        assert!(md.contains("- **Branch**: t/919fea9-fix-the-login-bug"));
+        assert!(md.contains("- **Tags**: auth"));
+        assert!(md.contains("- **Progress**: 1/1"));
     }
 
     #[test]
-    fn markdown_with_empty_plan_shows_a_hint() {
-        let md = markdown(&sample(), "main", &Plan::default());
+    fn an_empty_plan_is_documented() {
+        let md = markdown(&sample(), "backlog", &Plan::default());
+        assert!(md.contains("## Plan"));
         assert!(md.contains("no step yet"));
-        assert!(md.contains("tod sub 919fe"));
     }
 
     #[test]
-    fn markdown_of_done_task_says_complete() {
-        let mut task = sample();
-        task.done = true;
-        let md = markdown(&task, "main", &Plan::default());
-        assert!(md.contains("- **Status**: complete
-"));
+    fn write_brief_goes_into_the_task_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        write_brief(dir.path(), &sample(), "todo", &Plan::default()).unwrap();
+        assert!(dir.path().join(SPEC_FILE).is_file());
     }
-
-    use crate::plan::Step;
 }

@@ -1,10 +1,10 @@
-//! Planning layer end-to-end tests: project file, plans, briefs.
+//! Planning layer end-to-end tests: per-task plan.md and spec.md.
 
 use std::fs;
 use std::process::Command;
 
-use dot::brief::{markdown, write_brief};
-use dot::plan::{Plan, Project, Step};
+use dot::brief::{markdown, write_brief, SPEC_FILE};
+use dot::plan::{Plan, Step, PLAN_FILE};
 use dot::store::Store;
 
 fn setup() -> (tempfile::TempDir, Store) {
@@ -21,91 +21,70 @@ fn setup() -> (tempfile::TempDir, Store) {
 }
 
 #[test]
-fn project_plan_file_round_trip() {
+fn task_plan_round_trip() {
     let (_dir, store) = setup();
-    let task = store.add("complex task", "tester", false).unwrap();
+    let task = store.add("complex task", "tester", true).unwrap();
+    let dir = store
+        .state_dir("backlog")
+        .unwrap()
+        .join(&task.uid);
 
-    let mut project = Project::load(&store).unwrap();
-    project.add_step(&task.uid, "investigate the bug");
-    project.add_step(&task.uid, "write the fix");
-    project.save(&store).unwrap();
+    let mut plan = Plan::load(&dir).unwrap();
+    assert!(plan.is_empty());
+    plan.add_step("investigate the bug");
+    plan.add_step("write the fix");
+    Plan::save(&dir, &plan).unwrap();
 
-    // reload from the central plan.dot file
-    let reloaded = Project::load(&store).unwrap();
-    let plan = reloaded.plan(&task.uid).unwrap();
-    assert_eq!(plan.steps.len(), 2);
-    assert!(!plan.steps[0].done);
-    assert_eq!(plan.steps[0].text, "investigate the bug");
-    assert_eq!(plan.steps[1].text, "write the fix");
+    // reload from the plan.md of the task directory
+    let reloaded = Plan::load(&dir).unwrap();
+    assert_eq!(reloaded.steps.len(), 2);
+    assert!(!reloaded.steps[0].done);
+    assert_eq!(reloaded.steps[0].text, "investigate the bug");
+    assert_eq!(reloaded.steps[1].text, "write the fix");
+
+    // checking a step persists
+    let mut plan = Plan::load(&dir).unwrap();
+    plan.check_step(1).unwrap();
+    Plan::save(&dir, &plan).unwrap();
+    assert_eq!(Plan::load(&dir).unwrap().done_count(), 1);
 }
 
 #[test]
-fn project_plan_file_keeps_done_state() {
+fn plan_file_is_a_markdown_checklist() {
     let (_dir, store) = setup();
-    let task = store.add("complex task", "tester", false).unwrap();
+    let task = store.add("complex task", "tester", true).unwrap();
+    let dir = store.state_dir("backlog").unwrap().join(&task.uid);
 
-    let mut project = Project::load(&store).unwrap();
-    project.add_step(&task.uid, "step one");
-    project.check_step(&task.uid, 1).unwrap();
-    project.save(&store).unwrap();
+    let mut plan = Plan::default();
+    plan.add_step("do things");
+    plan.check_step(1).unwrap();
+    Plan::save(&dir, &plan).unwrap();
 
-    let reloaded = Project::load(&store).unwrap();
-    let plan = reloaded.plan(&task.uid).unwrap();
-    assert_eq!(plan.done_count(), 1);
-    assert!(plan.steps[0].done);
+    let content = fs::read_to_string(dir.join(PLAN_FILE)).unwrap();
+    assert_eq!(content, "- [x] do things\n");
 }
 
 #[test]
-fn project_file_is_valid_dot_format() {
+fn spec_markdown_written_into_the_task_directory() {
     let (_dir, store) = setup();
     let task = store.add("complex task", "tester", false).unwrap();
+    let dir = store.state_dir("todo").unwrap().join(&task.uid);
 
-    let mut project = Project::load(&store).unwrap();
-    project.add_step(&task.uid, "do things");
-    project.check_step(&task.uid, 1).unwrap();
-    project.save(&store).unwrap();
+    let mut plan = Plan::default();
+    plan.add_step("first");
+    plan.add_step("second");
+    plan.check_step(1).unwrap();
 
-    let content = fs::read_to_string(store.plan_path()).unwrap();
-    assert!(content.contains(&format!("{}:", task.uid)));
-    assert!(content.contains("
-	[x] do things
-"));
-}
-
-#[test]
-fn project_load_without_file_is_empty() {
-    let (_dir, store) = setup();
-    let project = Project::load(&store).unwrap();
-    assert!(project.plan("whatever").is_none());
-}
-
-#[test]
-fn brief_markdown_written_to_md_folder() {
-    let (_dir, store) = setup();
-    let branch = store.branch().unwrap();
-    let task = store.add("complex task", "tester", false).unwrap();
-
-    let mut project = Project::load(&store).unwrap();
-    project.add_step(&task.uid, "first");
-    project.add_step(&task.uid, "second");
-    project.check_step(&task.uid, 1).unwrap();
-    let plan = project.plan(&task.uid).unwrap().clone();
-
-    let path = write_brief(&store, &task, &branch, &plan).unwrap();
-    assert_eq!(path, store.md_dir().join(format!("{}.md", task.uid)));
+    write_brief(&dir, &task, "todo", &plan).unwrap();
+    let path = dir.join(SPEC_FILE);
     assert!(path.is_file());
 
     let content = fs::read_to_string(&path).unwrap();
-    assert!(content.starts_with("# complex task
-"));
-    assert!(content.contains(&format!("- **Context**: {branch}
-")));
-    assert!(content.contains("- **Progress**: 1/2
-"));
-    assert!(content.contains("- [x] first
-"));
-    assert!(content.contains("- [ ] second
-"));
+    assert!(content.starts_with("# complex task\n"));
+    assert!(content.contains("- **State**: todo\n"));
+    assert!(content.contains("- **Progress**: 1/2\n"));
+    assert!(content.contains("- [x] first\n"));
+    assert!(content.contains("- [ ] second\n"));
 }
 
 #[test]
@@ -118,7 +97,7 @@ fn markdown_is_agent_friendly() {
             Step { done: false, text: "patch auth.rs".into() },
         ],
     };
-    let md = markdown(&task, "feature/login", &plan);
+    let md = markdown(&task, "review", &plan);
     assert!(md.contains("# Fix the login bug"));
     assert!(md.contains("## Plan"));
     assert!(md.contains("- [ ] patch auth.rs"));
@@ -132,26 +111,24 @@ fn store_task() -> dot::task::Task {
         author: "tester".to_string(),
         created: chrono::Utc::now(),
         updated: chrono::Utc::now(),
-        done: false,
-            rfr: false,
-            tags: Vec::new(),
+        branch: Some("t/aaaaaaa-fix-the-login-bug".to_string()),
+        tags: Vec::new(),
         content: None,
     }
 }
 
 #[test]
-fn find_task_searches_backlog_then_contexts() {
+fn find_task_searches_every_state() {
     let (_dir, store) = setup();
-    let branch = store.branch().unwrap();
-    let ctx_task = store.add("in context", "tester", false).unwrap();
+    let ctx_task = store.add("in todo", "tester", false).unwrap();
     let backlog_task = store.add("in backlog", "tester", true).unwrap();
 
-    let (loc_ctx, found_ctx) = store.find_task(&ctx_task.uid[..5]).unwrap();
-    assert_eq!(loc_ctx, branch);
+    let (state_ctx, found_ctx) = store.find_task(&ctx_task.uid[..5]).unwrap();
+    assert_eq!(state_ctx, "todo");
     assert_eq!(found_ctx.uid, ctx_task.uid);
 
-    let (loc_backlog, found_backlog) = store.find_task(&backlog_task.uid[..5]).unwrap();
-    assert_eq!(loc_backlog, "backlog");
+    let (state_backlog, found_backlog) = store.find_task(&backlog_task.uid[..5]).unwrap();
+    assert_eq!(state_backlog, "backlog");
     assert_eq!(found_backlog.uid, backlog_task.uid);
 
     assert!(store.find_task("zzzzz").is_err());

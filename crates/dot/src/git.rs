@@ -231,12 +231,36 @@ pub fn fetch(dir: &Path, remote: &str) -> Result<()> {
         .with_context(|| format!("cannot fetch '{remote}'"))
 }
 
+/// Fetch a single branch to FETCH_HEAD, without updating any ref:
+/// a mirror (the server) cannot fetch into its checked-out tod
+/// branch, and has no remote-tracking refs. The refspec has no
+/// destination on purpose (the commit lands in FETCH_HEAD), and
+/// --update-head-ok lifts the refusal to fetch the branch checked
+/// out in the worktree.
+pub fn fetch_ref(dir: &Path, remote: &str, branch: &str) -> Result<()> {
+    git(
+        dir,
+        &["fetch", "--quiet", "--update-head-ok", remote, &format!("refs/heads/{branch}")],
+    )
+        .map(|_| ())
+        .with_context(|| format!("cannot fetch '{branch}' from '{remote}'"))
+}
+
 /// Fast-forward the branch checked out in 'dir' to 'from'.
 /// Fails when the histories diverged.
 pub fn merge_ff_only(dir: &Path, from: &str) -> Result<()> {
     git(dir, &["merge", "--ff-only", from])
         .map(|_| ())
         .with_context(|| format!("cannot fast-forward to '{from}'"))
+}
+
+/// Reset the worktree at 'dir' to its HEAD, files and index. Only
+/// for machine-managed worktrees (the tod storage): a fetch in a
+/// mirror moves the checked-out ref without touching the tree.
+pub fn reset_hard(dir: &Path) -> Result<()> {
+    git(dir, &["reset", "--hard", "HEAD"])
+        .map(|_| ())
+        .context("git reset --hard failed")
 }
 
 /// Push a branch to a remote, creating it there if needed.

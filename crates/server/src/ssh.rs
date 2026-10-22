@@ -449,7 +449,7 @@ mod tests {
             use dot::store::Store;
             let store = Store::new(&seed);
             store.init().unwrap();
-            store.add_in(Some("main"), "seed task", "tester").unwrap();
+            store.add_in(false, "seed task", "tester").unwrap();
         } // dropped: the tod branch is pushed to the bare origin
 
         // the server: user + key + registered repository

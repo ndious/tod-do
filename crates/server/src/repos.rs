@@ -211,7 +211,7 @@ mod tests {
         assert!(out.status.success(), "git init failed");
         let store = Store::new(dir.path());
         store.init().unwrap();
-        store.add_in(None, "origin task", "tester").unwrap();
+        store.add_in(true, "origin task", "tester").unwrap();
         dir
     }
 
@@ -294,7 +294,7 @@ mod tests {
         {
             let store = Store::new(seed.path());
             store.init().unwrap();
-            store.add_in(None, "seed task", "tester").unwrap();
+            store.add_in(true, "seed task", "tester").unwrap();
         } // dropped: the tod branch is pushed to the bare origin
 
         // the server mirrors the repository

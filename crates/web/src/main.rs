@@ -39,18 +39,17 @@ pub struct TaskView {
     pub uid: String,
     pub description: String,
     pub author: String,
-    pub done: bool,
+    pub state: String,
     #[serde(default)]
-    pub rfr: bool,
+    pub branch: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
-    pub context: String,
     pub plan: Vec<StepView>,
     pub progress: (usize, usize),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContextView {
+pub struct StateView {
     pub name: String,
     pub tasks: Vec<TaskView>,
 }
@@ -62,9 +61,7 @@ pub struct Status {
     #[serde(default)]
     pub branch: String,
     #[serde(default)]
-    pub backlog: Vec<TaskView>,
-    #[serde(default)]
-    pub contexts: Vec<ContextView>,
+    pub states: Vec<StateView>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -271,15 +268,19 @@ pub fn task_card(props: &TaskCardProps) -> Html {
         Callback::from(move |_| on_open.emit(task.clone()))
     };
 
-    let class = if task.done { "task done card bg-base-100" } else { "task card bg-base-100" };
+    let class = if task.state == "done" || task.state == "canceled" {
+        "task done card bg-base-100"
+    } else {
+        "task card bg-base-100"
+    };
     let short = &task.uid[..task.uid.len().min(7)];
 
     html! {
         <li class={class} {onclick}>
             <span class="desc">{ task.description.clone() }</span>
             <span class="uid badge badge-ghost badge-sm font-mono">{ short }</span>
-            if task.rfr && !task.done {
-                <span class="badge badge-warning badge-sm">{ "rfr" }</span>
+            if let Some(branch) = &task.branch {
+                <span class="badge badge-ghost badge-sm font-mono">{ branch.clone() }</span>
             }
             { for task.tags.iter().map(|tag| html! {
                 <span class="badge badge-outline badge-sm">{ tag.clone() }</span>
@@ -294,9 +295,9 @@ pub fn task_card(props: &TaskCardProps) -> Html {
 /// Look a task up in the project status by its identifier.
 fn find_task(status: &Status, uid: &str) -> Option<TaskView> {
     status
-        .backlog
+        .states
         .iter()
-        .chain(status.contexts.iter().flat_map(|c| c.tasks.iter()))
+        .flat_map(|s| s.tasks.iter())
         .find(|t| t.uid == uid)
         .cloned()
 }
@@ -372,9 +373,12 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
     let on_toggle_diff = {
         let token = props.token.clone();
         let repo_id = props.repo_id;
-        let branch = task.context.clone();
+        let branch = task.branch.clone();
         let diff_view = diff_view.clone();
         Callback::from(move |_| {
+            let Some(branch) = branch.clone() else {
+                return;
+            };
             // shown? a second click hides it again
             if let DiffView::Shown(_) = &*diff_view {
                 diff_view.set(DiffView::Hidden);
@@ -510,8 +514,44 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
             <div class="modal-box" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
                 <h3 class="text-lg font-bold">{ task.description.clone() }</h3>
                 <p class="meta">
-                    { format!("{} — context: {} — by {}{}", short, task.context, task.author, if task.rfr { " — ready for review" } else { "" }) }
+                    { format!("{} — by {}", short, task.author) }
+                    { for task.tags.iter().map(|tag| html! {
+                        <span class="badge badge-outline badge-sm">{ tag.clone() }</span>
+                    }) }
                 </p>
+                <div class="state-bar">
+                    <select
+                        class="select select-bordered select-sm"
+                        oninput={
+                            let token = props.token.clone();
+                            let path = format!("/api/repos/{}/state", props.repo_id);
+                            let uid = task.uid.clone();
+                            let on_refresh = props.on_refresh.clone();
+                            Callback::from(move |e: InputEvent| {
+                                let state = select_value(e);
+                                let (token, path, uid, state) = (
+                                    token.clone(),
+                                    path.clone(),
+                                    uid.clone(),
+                                    state,
+                                );
+                                let on_refresh = on_refresh.clone();
+                                spawn_local(async move {
+                                    let body = serde_json::json!({ "uid": uid, "state": state });
+                                    api_post(&token, &path, &body).await;
+                                    on_refresh.emit(());
+                                });
+                            })
+                        }
+                    >
+                        { for ["backlog", "todo", "review", "test", "done", "canceled"].iter().map(|s| html! {
+                            <option value={*s} selected={*s == task.state}>{ *s }</option>
+                        }) }
+                    </select>
+                    if let Some(branch) = &task.branch {
+                        <span class="badge badge-ghost badge-sm font-mono">{ branch.clone() }</span>
+                    }
+                </div>
                 <form class="tags-form" onsubmit={on_save_tags}>
                     <input
                         type="text"
@@ -533,7 +573,7 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                     />
                     <button type="submit" class="btn btn-sm">{ "+" }</button>
                 </form>
-                if task.context != "backlog" {
+                if task.branch.is_some() {
                     <button class="btn btn-ghost btn-xs" onclick={on_toggle_diff.clone()}>
                         { match (*diff_view).clone() {
                             DiffView::Hidden => "show diff".to_string(),
@@ -587,20 +627,17 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
 pub struct AddFormProps {
     pub token: String,
     pub repo_id: i64,
-    pub contexts: Vec<String>,
     pub on_refresh: Callback<()>,
 }
 
 #[function_component(AddForm)]
 pub fn add_form(props: &AddFormProps) -> Html {
     let description = use_state(String::new);
-    let context = use_state(|| "backlog".to_string());
 
     let on_submit = {
         let token = props.token.clone();
         let path = format!("/api/repos/{}/task", props.repo_id);
         let description = description.clone();
-        let context = context.clone();
         let on_refresh = props.on_refresh.clone();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
@@ -608,45 +645,25 @@ pub fn add_form(props: &AddFormProps) -> Html {
             if desc.trim().is_empty() {
                 return;
             }
-            let ctx = (*context).clone();
             let (token, path) = (token.clone(), path.clone());
             let on_refresh = on_refresh.clone();
             spawn_local(async move {
-                let body = serde_json::json!({
-                    "description": desc,
-                    "context": if ctx == "backlog" {
-                        serde_json::Value::Null
-                    } else {
-                        serde_json::Value::String(ctx)
-                    },
-                });
+                let body = serde_json::json!({ "description": desc });
                 api_post(&token, &path, &body).await;
                 on_refresh.emit(());
             });
         })
     };
 
-    let options = std::iter::once("backlog".to_string())
-        .chain(props.contexts.iter().cloned())
-        .map(|c| {
-            let selected = (*context).clone() == c;
-            html! { <option value={c.clone()} {selected}>{ c }</option> }
-        })
-        .collect::<Html>();
-
-    let ctx = context.clone();
     html! {
         <form class="add" onsubmit={on_submit}>
             <input
                 type="text"
                 class="input input-bordered"
-                placeholder="new task…"
+                placeholder="new task (goes to the backlog)…"
                 value={(*description).clone()}
                 oninput={Callback::from(move |e: InputEvent| description.set(input_value(e)))}
             />
-            <select class="select select-bordered" oninput={Callback::from(move |e: InputEvent| ctx.set(select_value(e)))}>
-                { options }
-            </select>
             <button type="submit" class="btn btn-primary">{ "add" }</button>
         </form>
     }
@@ -838,8 +855,6 @@ pub fn app() -> Html {
         Some(t) => {
             let s = (*status).clone();
 
-            let ctx_names: Vec<String> = s.contexts.iter().map(|c| c.name.clone()).collect();
-
             let page = match (*route).clone() {
                 Route::Repos => {
                     let list = (*repos)
@@ -963,11 +978,9 @@ pub fn app() -> Html {
                         Callback::from(move |_| selected.set(None))
                     };
 
-                    // one kanban column: a title with the card count, and
-                    // the task cards (done ones sink to the bottom)
+                    // one kanban column per state: a title with the
+                    // card count, and the task cards
                     let column = |title: String, tasks: Vec<TaskView>| -> Html {
-                        let mut tasks = tasks;
-                        tasks.sort_by_key(|t| t.done);
                         let count = tasks.len();
                         let cards = tasks
                             .iter()
@@ -984,12 +997,10 @@ pub fn app() -> Html {
                         }
                     };
 
-                    let columns = std::iter::once(column("backlog".to_string(), s.backlog.clone()))
-                        .chain(
-                            s.contexts
-                                .iter()
-                                .map(|c| column(c.name.clone(), c.tasks.clone())),
-                        )
+                    let columns = s
+                        .states
+                        .iter()
+                        .map(|state| column(state.name.clone(), state.tasks.clone()))
                         .collect::<Html>();
 
                     // the overlay task is looked up in the fresh status on
@@ -1012,7 +1023,7 @@ pub fn app() -> Html {
                                 }
                                 <button class="btn btn-sm" onclick={on_refresh}>{ "refresh" }</button>
                             </div>
-                            <AddForm token={t.clone()} repo_id={id} contexts={ctx_names} on_refresh={refresh_status.clone()} />
+                            <AddForm token={t.clone()} repo_id={id} on_refresh={refresh_status.clone()} />
                             <div class="board">
                                 { columns }
                             </div>
