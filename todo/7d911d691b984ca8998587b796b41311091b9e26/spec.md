@@ -4,8 +4,9 @@
 - **State**: todo
 - **Branch**: t/7d911d6-console-volet-lateral-pour-le
 - **Created**: 2026-10-22 21:10:39 +0000
-- **Progress**: 0/1
+- **Progress**: 0/2
 
 ## Plan
 
 - [ ] web: remplacer la modal par un panneau lateral droit (backdrop + animation)
+- [ ] build + smoke + cycle
