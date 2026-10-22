@@ -1,4 +1,4 @@
 - [x] dot: module spec (scaffold prompt: analyse existant, recherches, reflexions, travail) — fin du brief genere
 - [x] cli+server: plan/spec/brief servent le spec redige, plus de regeneration sur sub/check
 - [x] skill agent + README a jour, purge des spec generes de la branche tod
-- [ ] tests + smoke + cycle
+- [x] tests + smoke + cycle
