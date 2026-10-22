@@ -279,6 +279,7 @@ tod ls -A                   # every context (same filters)
 tod ls -t rust              # only the tasks carrying a tag
 tod x 919fe                # task done (moves to the done state)
 tod rfr 919fe              # ready for review + push the work branch
+tod test 919fe             # move to the test state: work merged into the test branch
 tod state 919fe test       # move a task to any state
 tod tag 919fe rust cli      # replace the tags (none clears them)
 tod rm 919fe               # cancel a task (kept in the canceled state)
@@ -296,6 +297,9 @@ tod completions bash       # shell completion script (bash, zsh, fish…)
 ```
 backlog -> todo -> review -> test -> done
                 \-> canceled
+
+main ──┬────────────────────────────── merge (finish)
+       └─ t/<task> ── merge (tod test) ─→ test branch
 ```
 
 The **state** of a task is the directory holding it (backlog, todo,
@@ -309,10 +313,15 @@ branch exists), linked to its task by the uid, with a pure-ASCII
 slug (accents transliterated, at most 30 characters, never cut
 mid-word). `rfr` moves the task to `review` and pushes its branch
 to origin (the web console shows the diff of pushed branches).
-`finish` rebases the branch on the base, merges it fast-forward
-only, moves its tasks to `done` and deletes the merged branch.
-`x` closes a task from anywhere; `state` moves a task to any
-state; `rm` cancels it (the directory is kept for the record).
+`test` moves the task to the test state and merges its work into
+the **`test` branch** — parallel to `main`, accumulating every task
+to test — so the tester checks out one branch and tries everything;
+it is pushed to origin too. `finish` rebases the branch on the
+base, merges it fast-forward only, moves its tasks to `done`,
+deletes the merged branch, and rebases the `test` branch on the
+base: the commits main just received drop out of it. `x` closes a
+task from anywhere; `state` moves a task to any state; `rm`
+cancels it (the directory is kept for the record).
 
 ## Differences with tod-cli
 

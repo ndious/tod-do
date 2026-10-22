@@ -3,6 +3,11 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
+/// The integration branch of the tasks in the test state:
+/// parallel to `main`, accumulating their work so a tester
+/// checks out one branch and tries everything.
+pub const TEST_BRANCH: &str = "test";
+
 /// Run git in 'dir' and return its trimmed stdout, or the error
 /// message on failure.
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
@@ -131,6 +136,14 @@ pub fn checkout(root: &Path, branch: &str) -> Result<()> {
 pub fn rebase(dir: &Path, base: &str) -> Result<()> {
     git(dir, &["rebase", base])
         .with_context(|| format!("cannot rebase onto '{base}' (resolve the conflicts, then re-run)"))
+        .map(|_| ())
+}
+
+/// Merge a branch into the branch checked out in 'dir'. Conflicts
+/// stop the merge: resolve them, commit, and run the command again.
+pub fn merge(dir: &Path, branch: &str) -> Result<()> {
+    git(dir, &["merge", "--no-edit", branch])
+        .with_context(|| format!("cannot merge '{branch}' (resolve the conflicts, commit, and re-run)"))
         .map(|_| ())
 }
 

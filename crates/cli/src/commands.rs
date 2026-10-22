@@ -391,10 +391,16 @@ fn start_in(store: &Store, identifier: &str, branch: Option<String>, base: &str)
 }
 
 /// Finish the current task: rebase its branch onto the base, merge
-/// it (fast-forward only), delete the branch and close the context
-/// — the whole end-of-task cycle in one command.
+/// it (fast-forward only), delete the branch and complete its tasks
+/// — the whole end-of-task cycle in one command. The test branch is
+/// rebased on the base too: the commits main just received drop out
+/// of it, it keeps only the tasks still waiting for a test.
 pub fn finish(base: &str) -> Result<()> {
     let store = Store::discover()?;
+    finish_in(&store, base)
+}
+
+fn finish_in(store: &Store, base: &str) -> Result<()> {
     let root = store.root();
     let branch = git::current_branch_in(root)?;
     if branch == base {
@@ -410,8 +416,63 @@ pub fn finish(base: &str) -> Result<()> {
     let count = store.complete_context(&branch)?;
     git::delete_branch(root, &branch)?;
 
+    // the test branch drops the merged work
+    if git::branch_exists(root, git::TEST_BRANCH)? {
+        git::checkout(root, git::TEST_BRANCH)?;
+        git::rebase(root, base)?;
+        git::checkout(root, base)?;
+    }
+
     println!(
         "Finished '{branch}': merged into '{base}', {count} task(s) done, branch deleted"
+    );
+    Ok(())
+}
+
+/// Move a task to the test state: its work is merged into the test
+/// branch — parallel to main, accumulating the tasks to test — so
+/// the tester checks out one branch and tries everything.
+pub fn test(identifier: &str) -> Result<()> {
+    let store = Store::discover()?;
+    test_in(&store, identifier)
+}
+
+fn test_in(store: &Store, identifier: &str) -> Result<()> {
+    store.ensure_init()?;
+    let (_, task) = store.find_task(identifier)?;
+    let Some(branch) = task.branch.clone() else {
+        bail!("task #{} has no working branch (start it first)", &task.uid[..5]);
+    };
+    let root = store.root();
+    let back_to = git::current_branch_in(root)?;
+
+    // keep the work clean on top of main before merging it
+    if back_to == branch {
+        git::rebase(root, "main")?;
+    }
+
+    // the test branch, from main when it does not exist yet
+    if !git::branch_exists(root, git::TEST_BRANCH)? {
+        git::create_branch_from(root, git::TEST_BRANCH, "main")?;
+    }
+    git::checkout(root, git::TEST_BRANCH)?;
+    git::merge(root, &branch)?;
+    git::checkout(root, &back_to)?;
+
+    store.set_state(identifier, "test")?;
+
+    // push both: the testers may be elsewhere
+    if store.has_origin() {
+        let _ = git::spawn_push(root, "origin", git::TEST_BRANCH);
+        let _ = git::spawn_push(root, "origin", &branch);
+    }
+
+    println!(
+        "Task #{} moved to test: '{}' merged into '{}'{}",
+        &task.uid[..5],
+        branch,
+        git::TEST_BRANCH,
+        if store.has_origin() { " (pushed)" } else { "" }
     );
     Ok(())
 }
@@ -482,6 +543,17 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    /// Run git in 'root' and return its trimmed stdout.
+    fn git(root: &std::path::Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {} failed", args.join(" "));
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
     /// A temp directory with a real git repository and a store on it.
     fn git_repo() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
@@ -527,6 +599,35 @@ mod tests {
             git::current_branch_in(dir.path()).unwrap(),
             format!("t/{}", &task3.uid[..7])
         );
+    }
+
+    #[test]
+    fn test_branch_accumulates_work_and_finish_cleans_it() {
+        let (dir, store) = git_repo();
+        let task = store.add_in(true, "feature a", "tester").unwrap();
+        start_in(&store, &task.uid[..7], None, "main").unwrap();
+        let work_branch = format!("t/{}-feature-a", &task.uid[..7]);
+
+        // some work on the branch
+        std::fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+        git::commit_all(dir.path(), "feat a").unwrap();
+
+        // tod test: the work lands in the test branch, the task
+        // moves to the test state, and we stay on the work branch
+        test_in(&store, &task.uid[..7]).unwrap();
+        assert_eq!(store.find_task(&task.uid).unwrap().0, "test");
+        assert!(git::branch_exists(dir.path(), git::TEST_BRANCH).unwrap());
+        assert_eq!(git::current_branch_in(dir.path()).unwrap(), work_branch);
+        let log = git(dir.path(), &["log", "--format=%s", git::TEST_BRANCH]);
+        assert!(log.contains("feat a"));
+
+        // tod finish from the work branch: main receives the work,
+        // the test branch is rebased clean of it
+        finish_in(&store, "main").unwrap();
+        assert_eq!(store.find_task(&task.uid).unwrap().0, "done");
+        assert!(!git::branch_exists(dir.path(), &work_branch).unwrap());
+        let ahead = git(dir.path(), &["rev-list", "--count", &format!("main..{}", git::TEST_BRANCH)]);
+        assert_eq!(ahead, "0");
     }
 
     #[test]

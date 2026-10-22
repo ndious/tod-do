@@ -149,6 +149,12 @@ enum Commands {
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
+    /// Move a task to the test state: merge its work into the test branch
+    Test {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+    },
     /// Move a task to another state
     State {
         /// Full or partial task identifier
@@ -228,6 +234,7 @@ fn main() -> Result<()> {
         Commands::Tag { identifier, tags } => commands::tag(&identifier, tags),
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rfr { identifier } => commands::rfr(&identifier),
+        Commands::Test { identifier } => commands::test(&identifier),
         Commands::State { identifier, state } => commands::state(&identifier, &state),
         Commands::Rm { identifier } => commands::rm(&identifier),
         Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
