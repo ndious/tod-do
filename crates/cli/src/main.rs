@@ -106,11 +106,23 @@ enum Commands {
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
     },
+    /// Print the spec.md of a task, or open it in your editor
+    Spec {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+        /// Open the spec in $TOD_EDITOR / $EDITOR / vi
+        #[arg(short, long)]
+        edit: bool,
+    },
     /// Print the Gherkin scenarios of a task (scaffold it first when missing)
     Scenario {
         /// Full or partial task identifier
         #[arg(add = ArgValueCandidates::new(task_id_candidates))]
         identifier: String,
+        /// Open the scenarios in $TOD_EDITOR / $EDITOR / vi
+        #[arg(short, long)]
+        edit: bool,
     },
     /// Project overview: backlog and contexts, with progress
     Status,
@@ -228,7 +240,8 @@ fn main() -> Result<()> {
         Commands::Sub { identifier, step } => commands::sub(&identifier, &step),
         Commands::Check { identifier, number } => commands::check(&identifier, number),
         Commands::Brief { identifier } => commands::brief(&identifier),
-        Commands::Scenario { identifier } => commands::scenario(&identifier),
+        Commands::Spec { identifier, edit } => commands::spec(&identifier, edit),
+        Commands::Scenario { identifier, edit } => commands::scenario(&identifier, edit),
         Commands::Status => commands::status(),
         Commands::Ls { backlog, all, all_contexts, tag } => commands::ls(backlog, all, all_contexts, tag),
         Commands::Tag { identifier, tags } => commands::tag(&identifier, tags),

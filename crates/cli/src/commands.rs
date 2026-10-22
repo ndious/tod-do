@@ -178,10 +178,10 @@ pub fn brief(identifier: &str) -> Result<()> {
     Ok(())
 }
 
-/// Print the Gherkin scenarios of a task. The file is scaffolded —
-/// in French Gherkin — when it does not exist yet, then printed:
-/// the user (or their AI assistant) fills it in.
-pub fn scenario(identifier: &str) -> Result<()> {
+/// Print the Gherkin scenarios of a task — scaffolded in French
+/// Gherkin when missing — or open them in the editor with --edit:
+/// the acceptance criteria are meant to be written by hand.
+pub fn scenario(identifier: &str, edit: bool) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
     let (_state, task) = store.find_task(identifier)?;
@@ -192,9 +192,18 @@ pub fn scenario(identifier: &str) -> Result<()> {
         fs::write(&path, dot::scenario::scaffold(&task))
             .with_context(|| format!("cannot write {}", path.display()))?;
         store.commit(&format!("tod: scenario {}", &task.uid[..7]))?;
-        println!("Created {} — fill the scenarios, then run it again to read", path.display());
+        if !edit {
+            println!("Created {} — fill the scenarios, or edit them with --edit", path.display());
+        }
     }
-    println!("{}", fs::read_to_string(&path)?);
+
+    if edit {
+        edit_in_editor(&path)?;
+        store.commit(&format!("tod: scenario {}", &task.uid[..7]))?;
+        println!("Edited {}", path.display());
+    } else {
+        println!("{}", fs::read_to_string(&path)?);
+    }
     Ok(())
 }
 
@@ -235,6 +244,53 @@ pub fn status() -> Result<()> {
 /// The tags of a task, as a printable suffix (" #a #b").
 fn tags_suffix(task: &Task) -> String {
     task.tags.iter().map(|t| format!(" #{t}")).collect()
+}
+
+/// Open a file in the user's editor — `$TOD_EDITOR`, then `$EDITOR`,
+/// then `vi`. The command waits for the editor to exit, so the
+/// changes are there when it returns.
+fn edit_in_editor(path: &std::path::Path) -> Result<()> {
+    let editor = std::env::var("TOD_EDITOR")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+    // sh -c: the editor variable may carry flags ("code -w")
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("{} \"$1\"", editor))
+        .arg("tod")
+        .arg(path)
+        .status()
+        .with_context(|| format!("cannot start the editor '{editor}'"))?;
+    if !status.success() {
+        bail!("the editor '{editor}' exited with an error");
+    }
+    Ok(())
+}
+
+/// Print the spec.md of a task — generated on the fly when missing —
+/// or open it in the editor with --edit: the fine-grained work
+/// description is meant to be contributed, not only generated.
+pub fn spec(identifier: &str, edit: bool) -> Result<()> {
+    let store = Store::discover()?;
+    store.ensure_init()?;
+    let (state, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
+    let path = dir.join(dot::brief::SPEC_FILE);
+
+    if !path.is_file() {
+        let plan = Plan::load(&dir)?;
+        brief::write_brief(&dir, &task, &state, &plan)?;
+        store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
+    }
+
+    if edit {
+        edit_in_editor(&path)?;
+        store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
+        println!("Edited {}", path.display());
+    } else {
+        println!("{}", fs::read_to_string(&path)?);
+    }
+    Ok(())
 }
 
 /// List the todos. The tasks left to do (backlog, todo, review,
@@ -569,6 +625,18 @@ mod tests {
         let store = Store::new(dir.path());
         store.init().unwrap();
         (dir, store)
+    }
+
+    #[test]
+    fn edit_in_editor_runs_the_configured_editor() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, "before").unwrap();
+        // 'touch' is the cheapest editor that exists: it opens the
+        // file and exits 0
+        std::env::set_var("TOD_EDITOR", "touch");
+        edit_in_editor(&file).unwrap();
+        assert!(file.is_file());
     }
 
     #[test]
