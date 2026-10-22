@@ -1,2 +1,2 @@
-- [ ] web: toggle board/list sur la page repo — liste avec etats depliables (done/canceled fermes par defaut)
+- [x] web: toggle board/list sur la page repo — liste avec etats depliables (done/canceled fermes par defaut)
 - [ ] build + smoke + cycle complet
