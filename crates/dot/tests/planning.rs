@@ -134,6 +134,7 @@ fn store_task() -> dot::task::Task {
         updated: chrono::Utc::now(),
         done: false,
             rfr: false,
+            tags: Vec::new(),
         content: None,
     }
 }

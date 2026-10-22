@@ -193,7 +193,7 @@ pub fn status() -> Result<()> {
                 }
                 _ => String::new(),
             };
-            println!("  [{mark}] #{} {}{progress}", &task.uid[..5], task.description);
+            println!("  [{mark}] #{} {}{}{progress}", &task.uid[..5], task.description, tags_suffix(task));
         }
     };
 
@@ -204,16 +204,25 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
+/// The tags of a task, as a printable suffix (" #a #b").
+fn tags_suffix(task: &Task) -> String {
+    task.tags.iter().map(|t| format!(" #{t}")).collect()
+}
+
 /// List the todos. Only the tasks left to do are shown, unless
 /// 'all' is set. 'all_contexts' lists the backlog plus every
-/// context instead of the current one.
-pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
+/// context instead of the current one. 'tag' keeps only the tasks
+/// carrying a given tag.
+pub fn ls(backlog: bool, all: bool, all_contexts: bool, tag: Option<String>) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
     let visible = |tasks: &[Task]| -> Vec<Task> {
         tasks
             .iter()
-            .filter(|t| all || !t.done)
+            .filter(|t| {
+                (all || !t.done)
+                    && tag.as_ref().map_or(true, |want| t.tags.iter().any(|x| x == want))
+            })
             .cloned()
             .collect()
     };
@@ -221,7 +230,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
     let print_list = |tasks: &[Task]| {
         for task in tasks {
             let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-            println!("{mark} #{}  {}", &task.uid[..5], task.description);
+            println!("{mark} #{}  {}{}", &task.uid[..5], task.description, tags_suffix(task));
         }
     };
 
@@ -235,7 +244,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
             for task in &shown {
                 let created = task.created.format("%Y-%m-%d");
                 let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-                println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
+                println!("{mark} #{}  {}{}  ({})", &task.uid[..5], task.description, tags_suffix(task), created);
             }
         }
         for (name, tasks) in store.contexts()? {
@@ -269,7 +278,7 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
         for task in &shown {
             let created = task.created.format("%Y-%m-%d");
             let mark = if task.done { "[x]" } else if task.rfr { "[r]" } else { "[ ]" };
-            println!("{mark} #{}  {}  ({})", &task.uid[..5], task.description, created);
+            println!("{mark} #{}  {}{}  ({})", &task.uid[..5], task.description, tags_suffix(task), created);
         }
     } else {
         let branch = store.branch()?;
@@ -284,6 +293,24 @@ pub fn ls(backlog: bool, all: bool, all_contexts: bool) -> Result<()> {
             return Ok(());
         }
         print_list(&shown);
+    }
+    Ok(())
+}
+
+/// Replace the tags of a task, wherever it lives. An empty list
+/// clears them.
+pub fn tag(identifier: &str, tags: Vec<String>) -> Result<()> {
+    let store = Store::discover()?;
+    let task = store.set_tags(identifier, tags)?;
+    if task.tags.is_empty() {
+        println!("Cleared the tags of #{} {}", &task.uid[..5], task.description);
+    } else {
+        println!(
+            "Tagged #{} {}: {}",
+            &task.uid[..5],
+            task.description,
+            task.tags.join(", ")
+        );
     }
     Ok(())
 }

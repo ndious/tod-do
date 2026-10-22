@@ -44,6 +44,12 @@ pub struct DiffParams {
     pub base: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TagParams {
+    pub uid: String,
+    pub tags: Vec<String>,
+}
+
 /// Open the store of a registered repository (mirror refresh first).
 /// The final push runs in the background: a request handler must not
 /// block on a slow network round trip.
@@ -250,6 +256,23 @@ async fn diff(
     format::json(d)
 }
 
+/// Replace the tags of a task (an empty list clears them).
+#[debug_handler]
+async fn set_tags(
+    _auth: JWTWithUser<users::Model>,
+    State(ctx): State<AppContext>,
+    Path(id): Path<i64>,
+    Json(params): Json<TagParams>,
+) -> Result<Response> {
+    let repo = find_repo(&ctx, id).await?;
+    let store = open_store(&ctx, &repo).await?;
+    let task = store.set_tags(&params.uid, params.tags).map_err(wrap)?;
+    let project = dot::plan::Project::load(&store)
+        .map_err(|e| Error::string(&format!("cannot load the plan: {e:#}")))?;
+    let (context, _) = store.find_task(&task.uid).map_err(wrap)?;
+    format::json(task_views::task_view(&task, &context, &project))
+}
+
 /// Regenerate the spec markdown, but only if it already exists.
 fn refresh_brief(
     store: &dot::store::Store,
@@ -275,6 +298,7 @@ pub fn routes() -> Routes {
         .add("/{id}/task", post(add_task))
         .add("/{id}/sub", post(add_sub))
         .add("/{id}/check", post(check_step))
+        .add("/{id}/tag", post(set_tags))
 }
 
 /// Wrap an anyhow error (the dot crate's) as a loco error.

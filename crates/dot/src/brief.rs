@@ -83,6 +83,7 @@ mod tests {
             updated: Utc::now(),
             done: false,
             rfr: false,
+            tags: Vec::new(),
             content: None,
         }
     }

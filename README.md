@@ -266,8 +266,10 @@ tod brief 919fe            # the agent-facing brief
 tod status                 # project overview with progress
 tod ls / ls -b             # todos left to do (-a: also the done ones)
 tod ls -A                   # every context (same filters)
+tod ls -t rust              # only the tasks carrying a tag
 tod x 919fe                # mark task complete (from anywhere)
 tod rfr 919fe              # ready for review + push the work branch
+tod tag 919fe rust cli      # replace the tags (none clears them)
 tod rm 919fe / rm -b       # delete (also cleans plan + brief)
 tod mv 919fe / mv -b       # backlog <-> context
 tod start 919fe            # work branch for a task (from main, --base to stack)

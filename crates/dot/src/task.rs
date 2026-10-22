@@ -16,8 +16,31 @@ pub fn task_schema() -> Schema {
         ("updated", FieldType::Iso8601),
         ("done", FieldType::Bool),
         ("rfr", FieldType::Bool),
+        ("tags", FieldType::Text),
         ("content", FieldType::Text),
     ])
+}
+
+/// Normalize a tag list: lowercase, trimmed, without duplicates
+/// or empties, in their order of appearance.
+pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.trim().to_lowercase();
+        if !tag.is_empty() && !out.contains(&tag) {
+            out.push(tag);
+        }
+    }
+    out
+}
+
+/// Tags are one text field: comma separated.
+fn parse_tags(value: &str) -> Vec<String> {
+    normalize_tags(value.split(',').map(str::to_string).collect())
+}
+
+fn stringify_tags(tags: &[String]) -> String {
+    tags.join(", ")
 }
 
 /// A single todo. One task = one dot file named by its uid (sha1).
@@ -33,6 +56,9 @@ pub struct Task {
     /// review before `tod finish`.
     #[serde(default)]
     pub rfr: bool,
+    /// Free-form labels, normalized lowercase.
+    #[serde(default)]
+    pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
 }
@@ -70,6 +96,7 @@ impl Task {
             Some(Field::Bool(b)) => *b,
             _ => false,
         };
+        let tags = doc.text("tags").as_deref().map(parse_tags).unwrap_or_default();
         let content = doc.text("content");
 
         Ok(Task {
@@ -80,6 +107,7 @@ impl Task {
             updated,
             done,
             rfr,
+            tags,
             content,
         })
     }
@@ -92,6 +120,9 @@ impl Task {
         doc.set("updated", Field::Datetime(self.updated));
         doc.set("done", Field::Bool(self.done));
         doc.set("rfr", Field::Bool(self.rfr));
+        if !self.tags.is_empty() {
+            doc.set("tags", Field::Text(stringify_tags(&self.tags)));
+        }
         if let Some(content) = &self.content {
             let lines: Vec<String> =
                 content.split('\n').map(|l| l.to_string()).collect();
@@ -117,6 +148,7 @@ mod tests {
             updated: dt,
             done: false,
             rfr: false,
+            tags: Vec::new(),
             content: None,
         }
     }
@@ -135,6 +167,26 @@ mod tests {
         assert!(file.starts_with("Description: write the tests\nAuthor: tester\n"));
         assert!(file.contains("Created: 2026-10-06 18:12:44 +0000\n"));
         assert!(file.contains("Done: 0\n"));
+    }
+
+    #[test]
+    fn tags_are_normalized_and_round_trip() {
+        let mut task = sample();
+        task.tags = normalize_tags(vec![
+            "Rust".into(),
+            " CLI ".into(),
+            "rust".into(),
+            "".into(),
+            "Git".into(),
+        ]);
+        assert_eq!(task.tags, vec!["rust".to_string(), "cli".to_string(), "git".to_string()]);
+
+        let back = Task::parse("abc123", &task.stringify()).unwrap();
+        assert_eq!(back.tags, task.tags);
+
+        // a file without tags reads as an empty list
+        let bare = sample();
+        assert!(bare.tags.is_empty());
     }
 
     #[test]

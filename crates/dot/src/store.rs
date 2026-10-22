@@ -332,6 +332,7 @@ impl Store {
             updated: now,
             done: false,
             rfr: false,
+            tags: Vec::new(),
             content: None,
         };
         let dir = match context {
@@ -426,6 +427,21 @@ impl Store {
             "tod: rfr {} {}",
             &task.uid[..7],
             task.description
+        ))?;
+        Ok(task)
+    }
+
+    /// Replace the tags of a task, wherever it lives. An empty list
+    /// removes them.
+    pub fn set_tags(&self, identifier: &str, tags: Vec<String>) -> Result<Task> {
+        let task = self.mark(identifier, |task| {
+            task.tags = crate::task::normalize_tags(tags.clone());
+            Ok(())
+        })?;
+        self.commit(&format!(
+            "tod: tag {} {}",
+            &task.uid[..7],
+            task.tags.join(",")
         ))?;
         Ok(task)
     }
@@ -673,6 +689,7 @@ mod tests {
             updated: chrono::Utc::now(),
             done: false,
             rfr: false,
+            tags: Vec::new(),
             content: None,
         };
         let tasks = vec![mk("abcdef1234"), mk("abz4567890")];

@@ -119,6 +119,17 @@ enum Commands {
         /// List every context (and the backlog), not only the current one
         #[arg(short = 'A', long)]
         all_contexts: bool,
+        /// Keep only the tasks carrying this tag
+        #[arg(short = 't', long, value_name = "TAG")]
+        tag: Option<String>,
+    },
+    /// Replace the tags of a task (no tags clears them)
+    Tag {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+        /// The tags (comma or space separated)
+        tags: Vec<String>,
     },
     /// Mark a task as complete, wherever it lives
     X {
@@ -201,7 +212,8 @@ fn main() -> Result<()> {
         Commands::Check { identifier, number } => commands::check(&identifier, number),
         Commands::Brief { identifier } => commands::brief(&identifier),
         Commands::Status => commands::status(),
-        Commands::Ls { backlog, all, all_contexts } => commands::ls(backlog, all, all_contexts),
+        Commands::Ls { backlog, all, all_contexts, tag } => commands::ls(backlog, all, all_contexts, tag),
+        Commands::Tag { identifier, tags } => commands::tag(&identifier, tags),
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rfr { identifier } => commands::rfr(&identifier),
         Commands::Rm { backlog, identifier } => commands::rm(&identifier, backlog),

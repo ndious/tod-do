@@ -181,3 +181,7 @@ pre.diff {
   max-width: 28rem;
 }
 .clone input[type="text"] { flex: 1; }
+
+/* tag editor */
+.tags-form { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.tags-form input[type="text"] { flex: 1; }

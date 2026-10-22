@@ -42,6 +42,8 @@ pub struct TaskView {
     pub done: bool,
     #[serde(default)]
     pub rfr: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub context: String,
     pub plan: Vec<StepView>,
     pub progress: (usize, usize),
@@ -279,6 +281,9 @@ pub fn task_card(props: &TaskCardProps) -> Html {
             if task.rfr && !task.done {
                 <span class="badge badge-warning badge-sm">{ "rfr" }</span>
             }
+            { for task.tags.iter().map(|tag| html! {
+                <span class="badge badge-outline badge-sm">{ tag.clone() }</span>
+            }) }
             if !task.plan.is_empty() {
                 <span class="badge badge-primary badge-sm">{ format!("{}/{}", task.progress.0, task.progress.1) }</span>
             }
@@ -473,6 +478,31 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
         Callback::from(move |_| on_close.emit(()))
     };
 
+    // the tag editor: the input holds the current tags, the save
+    // button replaces them
+    let tag_input = use_state(|| task.tags.join(", "));
+    let on_save_tags = {
+        let token = props.token.clone();
+        let path = format!("/api/repos/{}/tag", props.repo_id);
+        let uid = task.uid.clone();
+        let tag_input = tag_input.clone();
+        let on_refresh = props.on_refresh.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let tags: Vec<String> = (*tag_input)
+                .split(',')
+                .map(str::to_string)
+                .collect();
+            let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
+            let on_refresh = on_refresh.clone();
+            spawn_local(async move {
+                let body = serde_json::json!({ "uid": uid, "tags": tags });
+                api_post(&token, &path, &body).await;
+                on_refresh.emit(());
+            });
+        })
+    };
+
     let short = &task.uid[..task.uid.len().min(7)];
 
     html! {
@@ -482,6 +512,16 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                 <p class="meta">
                     { format!("{} — context: {} — by {}{}", short, task.context, task.author, if task.rfr { " — ready for review" } else { "" }) }
                 </p>
+                <form class="tags-form" onsubmit={on_save_tags}>
+                    <input
+                        type="text"
+                        class="input input-bordered input-sm"
+                        placeholder="tags, comma separated"
+                        value={(*tag_input).clone()}
+                        oninput={Callback::from(move |e: InputEvent| tag_input.set(input_value(e)))}
+                    />
+                    <button type="submit" class="btn btn-sm">{ "save tags" }</button>
+                </form>
                 <ol class="plan">{ steps }</ol>
                 <form class="sub" onsubmit={on_submit_step}>
                     <input
