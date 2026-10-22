@@ -4,9 +4,10 @@
 - **State**: todo
 - **Branch**: t/d02918e-edition-cli-choisir-son
 - **Created**: 2026-10-22 14:39:02 +0000
-- **Progress**: 0/2
+- **Progress**: 0/3
 
 ## Plan
 
 - [ ] cli: helper editeur (TOD_EDITOR > EDITOR > vi) + tod spec <id> [--edit]
 - [ ] cli: tod scenario <id> [--edit] (scaffold puis editeur)
+- [ ] tests + README + cycle complet
