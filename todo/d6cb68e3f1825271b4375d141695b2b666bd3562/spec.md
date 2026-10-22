@@ -4,9 +4,9 @@
 - **State**: todo
 - **Branch**: t/d6cb68e-console-vue-alternative-en
 - **Created**: 2026-10-22 21:00:11 +0000
-- **Progress**: 0/2
+- **Progress**: 1/2
 
 ## Plan
 
-- [ ] web: toggle board/list sur la page repo — liste avec etats depliables (done/canceled fermes par defaut)
+- [x] web: toggle board/list sur la page repo — liste avec etats depliables (done/canceled fermes par defaut)
 - [ ] build + smoke + cycle complet
