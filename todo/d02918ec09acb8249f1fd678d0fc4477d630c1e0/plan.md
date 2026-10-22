@@ -1,0 +1,1 @@
+- [ ] cli: helper editeur (TOD_EDITOR > EDITOR > vi) + tod spec <id> [--edit]
