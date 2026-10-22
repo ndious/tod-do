@@ -65,6 +65,6 @@ pub fn task_view(
         progress: (done_count, steps.len()),
         plan: steps,
         scenario: dot::scenario::read(task_dir),
-        spec: dot::brief::read(task_dir),
+        spec: dot::spec::read(task_dir),
     }
 }

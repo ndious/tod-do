@@ -13,10 +13,10 @@
 //! state (backlog, todo, review, test, done, canceled), one
 //! subdirectory per task named by its hash, holding `task.tod`
 //! (the task itself), `plan.md` (its micro-todo checklist),
-//! `spec.md` (the agent-facing work description) and optionally
+//! `spec.md` (the detailed prompt: analysis of the existing code, research, reflections, work to realize — authored, never generated) and optionally
 //! `scenario.feature` (its Gherkin acceptance criteria).
 
-pub mod brief;
+pub mod spec;
 pub mod git;
 pub mod plan;
 pub mod scenario;

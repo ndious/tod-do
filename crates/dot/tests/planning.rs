@@ -3,7 +3,7 @@
 use std::fs;
 use std::process::Command;
 
-use dot::brief::{markdown, write_brief, SPEC_FILE};
+use dot::spec::{read, scaffold, write_scaffold, SPEC_FILE};
 use dot::plan::{Plan, Step, PLAN_FILE};
 use dot::store::Store;
 
@@ -65,43 +65,31 @@ fn plan_file_is_a_markdown_checklist() {
 }
 
 #[test]
-fn spec_markdown_written_into_the_task_directory() {
+fn spec_scaffold_lives_in_the_task_directory() {
     let (_dir, store) = setup();
     let task = store.add("complex task", "tester", false).unwrap();
     let dir = store.state_dir("todo").unwrap().join(&task.uid);
 
-    let mut plan = Plan::default();
-    plan.add_step("first");
-    plan.add_step("second");
-    plan.check_step(1).unwrap();
+    // no spec until it is authored
+    assert!(read(&dir).is_none());
 
-    write_brief(&dir, &task, "todo", &plan).unwrap();
-    let path = dir.join(SPEC_FILE);
-    assert!(path.is_file());
-
-    let content = fs::read_to_string(&path).unwrap();
+    // the scaffold: a prompt skeleton, without tod metadata
+    write_scaffold(&dir, &task).unwrap();
+    let content = read(&dir).unwrap();
     assert!(content.starts_with("# complex task\n"));
-    assert!(content.contains("- **State**: todo\n"));
-    assert!(content.contains("- **Progress**: 1/2\n"));
-    assert!(content.contains("- [x] first\n"));
-    assert!(content.contains("- [ ] second\n"));
+    assert!(content.contains("## Analyse de l'existant"));
+    assert!(content.contains("## Recherches"));
+    assert!(content.contains("## Réflexions"));
+    assert!(content.contains("## Travail à réaliser"));
+    assert!(!content.contains("UID"));
+    assert!(!content.contains("Branch"));
+    assert!(!content.contains("Plan"));
 }
 
 #[test]
-fn markdown_is_agent_friendly() {
-    // The brief must be self-contained: objective, plan, done state.
+fn scaffold_helper_matches_the_file() {
     let task = store_task();
-    let plan = Plan {
-        steps: vec![
-            Step { done: true, text: "read the code".into() },
-            Step { done: false, text: "patch auth.rs".into() },
-        ],
-    };
-    let md = markdown(&task, "review", &plan);
-    assert!(md.contains("# Fix the login bug"));
-    assert!(md.contains("## Plan"));
-    assert!(md.contains("- [ ] patch auth.rs"));
-    assert!(md.contains("- **Progress**: 1/2"));
+    assert!(scaffold(&task).starts_with("# Fix the login bug\n"));
 }
 
 fn store_task() -> dot::task::Task {

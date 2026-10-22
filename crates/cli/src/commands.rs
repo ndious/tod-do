@@ -3,7 +3,7 @@ use std::io::{IsTerminal, Write};
 
 use anyhow::{bail, Context, Result};
 
-use dot::brief;
+use dot::spec;
 use dot::git;
 use dot::plan::Plan;
 use dot::store::Store;
@@ -117,17 +117,18 @@ pub fn plan(description: &str, backlog: bool) -> Result<()> {
     let author = git::user_name();
     let task = store.add(description, &author, backlog)?;
 
-    // the plan command creates the spec.md in advance
-    let (state, dir) = store.locate(&task.uid)?;
-    let plan = Plan::load(&dir)?;
-    brief::write_brief(&dir, &task, &state, &plan)?;
-    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
+    // the plan command scaffolds the spec: the detailed prompt the
+    // human or the agent fills in
+    let (_, dir) = store.locate(&task.uid)?;
+    spec::write_scaffold(&dir, &task)
+        .with_context(|| format!("cannot write {}", dir.join(spec::SPEC_FILE).display()))?;
+    store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
 
     println!(
-        "Planned #{} {} — {}",
+        "Planned #{} {} — fill the prompt with: tod spec {} -e",
         &task.uid[..5],
         task.description,
-        dir.join(dot::brief::SPEC_FILE).display()
+        &task.uid[..5]
     );
     Ok(())
 }
@@ -135,14 +136,13 @@ pub fn plan(description: &str, backlog: bool) -> Result<()> {
 pub fn sub(identifier: &str, step: &str) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (state, task) = store.find_task(identifier)?;
+    let (_, task) = store.find_task(identifier)?;
     let dir = store.locate(&task.uid)?.1;
 
     let mut plan = Plan::load(&dir)?;
     let number = plan.add_step(step);
     Plan::save(&dir, &plan)?;
     store.commit("tod: update plan")?;
-    refresh_brief(&store, &task, &state)?;
 
     println!("Added step {number} to #{}: {step}", &task.uid[..5]);
     Ok(())
@@ -151,30 +151,35 @@ pub fn sub(identifier: &str, step: &str) -> Result<()> {
 pub fn check(identifier: &str, number: usize) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (state, task) = store.find_task(identifier)?;
+    let (_, task) = store.find_task(identifier)?;
     let dir = store.locate(&task.uid)?.1;
 
     let mut plan = Plan::load(&dir)?;
     let step = plan.check_step(number)?;
     Plan::save(&dir, &plan)?;
     store.commit("tod: update plan")?;
-    refresh_brief(&store, &task, &state)?;
 
     let mark = if step.done { 'x' } else { ' ' };
     println!("[{mark}] step {number} of #{}: {}", &task.uid[..5], step.text);
     Ok(())
 }
 
+/// Print the spec of a task — its detailed prompt — scaffolding it
+/// when missing. The spec is authored (edited with `tod spec -e`),
+/// never generated: this is what the agent reads first.
 pub fn brief(identifier: &str) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (state, task) = store.find_task(identifier)?;
+    let (_, task) = store.find_task(identifier)?;
     let dir = store.locate(&task.uid)?.1;
-    let plan = Plan::load(&dir)?;
+    let path = dir.join(spec::SPEC_FILE);
 
-    brief::write_brief(&dir, &task, &state, &plan)?;
-    store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
-    println!("{}", brief::markdown(&task, &state, &plan));
+    if !path.is_file() {
+        spec::write_scaffold(&dir, &task)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+        store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
+    }
+    println!("{}", fs::read_to_string(&path)?);
     Ok(())
 }
 
@@ -267,20 +272,22 @@ fn edit_in_editor(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Print the spec.md of a task — generated on the fly when missing —
-/// or open it in the editor with --edit: the fine-grained work
-/// description is meant to be contributed, not only generated.
+/// Print the spec.md of a task — its detailed prompt, scaffolded
+/// when missing — or open it in the editor with --edit.
 pub fn spec(identifier: &str, edit: bool) -> Result<()> {
     let store = Store::discover()?;
     store.ensure_init()?;
-    let (state, task) = store.find_task(identifier)?;
+    let (_, task) = store.find_task(identifier)?;
     let dir = store.locate(&task.uid)?.1;
-    let path = dir.join(dot::brief::SPEC_FILE);
+    let path = dir.join(spec::SPEC_FILE);
 
     if !path.is_file() {
-        let plan = Plan::load(&dir)?;
-        brief::write_brief(&dir, &task, &state, &plan)?;
-        store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
+        spec::write_scaffold(&dir, &task)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+        store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
+        if !edit {
+            println!("Created {} — fill the prompt, or edit it with --edit", path.display());
+        }
     }
 
     if edit {
@@ -594,17 +601,7 @@ pub fn export(output: &str) -> Result<()> {
     Ok(())
 }
 
-/// Regenerate the spec markdown, but only if it already exists:
-/// 'tod brief' is the explicit way to (re)generate a spec.
-fn refresh_brief(store: &Store, task: &Task, state: &str) -> Result<()> {
-    let dir = store.locate(&task.uid)?.1;
-    if dir.join(dot::brief::SPEC_FILE).is_file() {
-        let plan = Plan::load(&dir)?;
-        brief::write_brief(&dir, task, state, &plan)?;
-        store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
-    }
-    Ok(())
-}
+
 
 #[cfg(test)]
 mod tests {

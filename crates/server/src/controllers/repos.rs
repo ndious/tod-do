@@ -221,7 +221,6 @@ async fn add_sub(
     plan.add_step(params.text.trim());
     dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
     store.commit("tod: update plan").map_err(wrap)?;
-    refresh_brief(&store, &task, &state)?;
     format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
@@ -241,7 +240,6 @@ async fn check_step(
     plan.check_step(params.number).map_err(wrap)?;
     dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
     store.commit("tod: update plan").map_err(wrap)?;
-    refresh_brief(&store, &task, &state)?;
     format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
@@ -296,21 +294,6 @@ async fn set_tags(
     let dir = store.locate(&task.uid).map_err(wrap)?.1;
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
     format::json(task_views::task_view(&task, &state, &plan, &dir))
-}
-
-/// Regenerate the spec markdown, but only if it already exists.
-fn refresh_brief(
-    store: &dot::store::Store,
-    task: &dot::task::Task,
-    state: &str,
-) -> Result<()> {
-    let dir = store.locate(&task.uid).map_err(wrap)?.1;
-    if dir.join(dot::brief::SPEC_FILE).is_file() {
-        let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
-        dot::brief::write_brief(&dir, task, state, &plan).map_err(wrap)?;
-        store.commit(&format!("tod: brief {}", &task.uid[..7])).map_err(wrap)?;
-    }
-    Ok(())
 }
 
 pub fn routes() -> Routes {
