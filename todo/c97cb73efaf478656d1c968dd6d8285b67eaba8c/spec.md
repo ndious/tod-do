@@ -4,8 +4,9 @@
 - **State**: todo
 - **Branch**: t/c97cb73-console-page-compte-edition
 - **Created**: 2026-10-22 20:46:54 +0000
-- **Progress**: 0/1
+- **Progress**: 0/2
 
 ## Plan
 
 - [ ] server: GET /api/account + POST /api/account/password (verification du mot de passe courant)
+- [ ] web: page #/account — info utilisateur, changement de mot de passe, cles ssh (liste/ajout/suppression)
