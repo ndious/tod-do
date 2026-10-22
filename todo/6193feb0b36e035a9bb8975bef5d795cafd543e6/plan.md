@@ -1,0 +1,1 @@
+- [ ] dot: scenario.feature (scaffold gherkin fr, read) + mention dans spec.md
