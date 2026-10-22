@@ -25,6 +25,7 @@
 	[ ] dot: plan.md et spec.md dans le dossier de la tache (fin du plan.dot central et du dossier md)
 	[ ] cli: tod state <id> <etat> + mapping start->todo, rfr->review, x->done, rm->canceled ; status/ls/ctx par etat et branche
 	[ ] server+web: colonnes kanban par etat, champ state/branch, endpoint state, suppression AddForm context
+	[ ] migration de notre branche tod + tests + README + cycle complet
 44a680cc4a6d9e518cb04f55d18adae74eee22b1:
 	[x] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
 	[x] overlay TaskDetail: description, meta, plan cliquable, ajout de step, fermeture (bouton, fond, Escape)
