@@ -1,9 +1,11 @@
 # console: vue liste par defaut, volet elargi avec spec, et diff repare (push bloquant)
 
 - **UID**: 8bd92d0e2d8154ed8d0fc702cb8955e4e113001b
-- **State**: backlog
+- **State**: todo
+- **Branch**: t/8bd92d0-console-vue-liste-par-defaut
 - **Created**: 2026-10-22 21:25:57 +0000
+- **Progress**: 0/1
 
 ## Plan
 
-- [ ] (no step yet — `tod sub 8bd92 "..."`)
+- [ ] cli: rfr/test poussent les branches en bloquant (le diff console depend de la presence sur origin)
