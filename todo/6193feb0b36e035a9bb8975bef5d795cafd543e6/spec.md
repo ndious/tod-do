@@ -4,8 +4,9 @@
 - **State**: todo
 - **Branch**: t/6193feb-scenarios-gherkin-scenario
 - **Created**: 2026-10-22 13:52:54 +0000
-- **Progress**: 0/1
+- **Progress**: 0/2
 
 ## Plan
 
 - [ ] dot: scenario.feature (scaffold gherkin fr, read) + mention dans spec.md
+- [ ] cli: tod scenario <id> (cree si absent, affiche)
