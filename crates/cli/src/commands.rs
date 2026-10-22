@@ -517,10 +517,16 @@ fn test_in(store: &Store, identifier: &str) -> Result<()> {
 
     store.set_state(identifier, "test")?;
 
-    // push both: the testers may be elsewhere
+    // push both, blocking: the testers may be elsewhere and the
+    // console diff reads origin
     if store.has_origin() {
-        let _ = git::spawn_push(root, "origin", git::TEST_BRANCH);
-        let _ = git::spawn_push(root, "origin", &branch);
+        for to_push in [git::TEST_BRANCH, branch.as_str()] {
+            if let Err(e) = git::push(root, "origin", to_push) {
+                println!(
+                    "warning: {e} — push '{to_push}' manually for the testers and the console"
+                );
+            }
+        }
     }
 
     println!(
@@ -539,11 +545,17 @@ pub fn rfr(identifier: &str) -> Result<()> {
     let store = Store::discover()?;
     let task = store.ready_for_review(identifier)?;
 
-    // push the branch so the console can show the diff of the work
+    // push the branch so the console can show the diff of the
+    // work: blocking, because a silent failure would break the
+    // review (rfr runs once per task, the latency is worth it)
     let branch = git::current_branch_in(store.root())?;
     if branch != "main" && store.has_origin() {
-        println!("Pushing '{branch}' to origin in the background…");
-        git::spawn_push(store.root(), "origin", &branch)?;
+        match git::push(store.root(), "origin", &branch) {
+            Ok(()) => println!("Pushed '{branch}' to origin"),
+            Err(e) => println!(
+                "warning: {e} — the console cannot show the diff until '{branch}' is pushed"
+            ),
+        }
     }
 
     println!(

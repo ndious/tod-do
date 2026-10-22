@@ -48,6 +48,8 @@ pub struct TaskView {
     pub progress: (usize, usize),
     #[serde(default)]
     pub scenario: Option<String>,
+    #[serde(default)]
+    pub spec: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -189,11 +191,21 @@ fn navigate(hash: &str) {
 // ---------- api helpers ----------
 
 /// An api call either succeeds, fails, or is rejected because the
-/// token is no longer valid.
+/// token is no longer valid. A failure carries the server's
+/// message when there is one.
 enum ApiOutcome<T> {
     Ok(T),
     Unauthorized,
-    Failed,
+    Failed(String),
+}
+
+/// Extract the "description" of a loco error body, falling back to
+/// the raw text.
+fn err_description(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["description"].as_str().map(str::to_string))
+        .unwrap_or_else(|| body.chars().take(200).collect())
 }
 
 async fn api_get<T: for<'de> Deserialize<'de>>(token: &str, path: &str) -> ApiOutcome<T> {
@@ -203,14 +215,18 @@ async fn api_get<T: for<'de> Deserialize<'de>>(token: &str, path: &str) -> ApiOu
         .await
     {
         Ok(resp) => resp,
-        Err(_) => return ApiOutcome::Failed,
+        Err(_) => return ApiOutcome::Failed("the server cannot be reached".to_string()),
     };
     if resp.status() == 401 {
         return ApiOutcome::Unauthorized;
     }
+    if !resp.ok() {
+        let body = resp.text().await.unwrap_or_default();
+        return ApiOutcome::Failed(err_description(&body));
+    }
     match resp.json::<T>().await {
         Ok(value) => ApiOutcome::Ok(value),
-        Err(_) => ApiOutcome::Failed,
+        Err(_) => ApiOutcome::Failed("invalid response".to_string()),
     }
 }
 
@@ -239,21 +255,22 @@ async fn api_post_json<T: for<'de> Deserialize<'de>>(
         .json(body)
     {
         Ok(request) => request,
-        Err(_) => return ApiOutcome::Failed,
+        Err(_) => return ApiOutcome::Failed("cannot build the request".to_string()),
     };
     let resp = match request.send().await {
         Ok(resp) => resp,
-        Err(_) => return ApiOutcome::Failed,
+        Err(_) => return ApiOutcome::Failed("the server cannot be reached".to_string()),
     };
     if resp.status() == 401 {
         return ApiOutcome::Unauthorized;
     }
     if !resp.ok() {
-        return ApiOutcome::Failed;
+        let body = resp.text().await.unwrap_or_default();
+        return ApiOutcome::Failed(err_description(&body));
     }
     match resp.json::<T>().await {
         Ok(value) => ApiOutcome::Ok(value),
-        Err(_) => ApiOutcome::Failed,
+        Err(_) => ApiOutcome::Failed("invalid response".to_string()),
     }
 }
 
@@ -406,7 +423,7 @@ pub fn account_page(props: &AccountPageProps) -> Html {
                         clear_token();
                         navigate("#/");
                     }
-                    ApiOutcome::Failed => {}
+                    ApiOutcome::Failed(_) => {}
                 }
                 if let ApiOutcome::Ok(k) = api_get::<Vec<KeyView>>(&token, "/api/keys").await {
                     keys.set(k);
@@ -599,8 +616,11 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                 let path = format!("/api/repos/{repo_id}/diff?branch={}", urlencode(&branch));
                 match api_get::<DiffResp>(&token, &path).await {
                     ApiOutcome::Ok(d) => diff_view.set(DiffView::Shown(d)),
-                    ApiOutcome::Unauthorized | ApiOutcome::Failed => {
+                    ApiOutcome::Unauthorized => {
                         diff_view.set(DiffView::Failed("cannot load the diff".to_string()))
+                    }
+                    ApiOutcome::Failed(e) => {
+                        diff_view.set(DiffView::Failed(format!("cannot load the diff: {e}")))
                     }
                 }
             });
@@ -776,11 +796,8 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                     />
                     <button type="submit" class="btn btn-sm">{ "save tags" }</button>
                 </form>
+                <h4>{ "plan" }</h4>
                 <ol class="plan">{ steps }</ol>
-                if let Some(scenario) = &task.scenario {
-                    <h4>{ "scénarios" }</h4>
-                    <pre class="gherkin">{ scenario.clone() }</pre>
-                }
                 <form class="sub" onsubmit={on_submit_step}>
                     <input
                         type="text"
@@ -791,7 +808,15 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                     />
                     <button type="submit" class="btn btn-sm">{ "+" }</button>
                 </form>
-                if task.branch.is_some() {
+                if let Some(spec) = &task.spec {
+                    <h4>{ "spec" }</h4>
+                    <pre class="doc">{ spec.clone() }</pre>
+                }
+                if let Some(scenario) = &task.scenario {
+                    <h4>{ "scénarios" }</h4>
+                    <pre class="gherkin">{ scenario.clone() }</pre>
+                }
+                if task.branch.is_some() && !matches!(task.state.as_str(), "done" | "canceled") {
                     <button class="btn btn-ghost btn-xs" onclick={on_toggle_diff.clone()}>
                         { match (*diff_view).clone() {
                             DiffView::Hidden => "show diff".to_string(),
@@ -959,7 +984,7 @@ pub fn app() -> Html {
         Board,
         List,
     }
-    let view = use_state(|| View::Board);
+    let view = use_state(|| View::List);
     // the states expanded in the list view (done and canceled
     // start collapsed)
     let open_states = use_state(|| {
@@ -1016,7 +1041,7 @@ pub fn app() -> Html {
                         navigate("#/");
                         token.set(None);
                     }
-                    ApiOutcome::Failed => {}
+                    ApiOutcome::Failed(_) => {}
                 }
             });
         })
@@ -1044,7 +1069,7 @@ pub fn app() -> Html {
                         navigate("#/");
                         token.set(None);
                     }
-                    ApiOutcome::Failed => {}
+                    ApiOutcome::Failed(_) => {}
                 }
             });
         })
@@ -1158,7 +1183,7 @@ pub fn app() -> Html {
                                         navigate("#/");
                                         token.set(None);
                                     }
-                                    ApiOutcome::Failed => {
+                                    ApiOutcome::Failed(_) => {
                                         error.set(
                                             "cannot create repository (name already taken or bad URL?)"
                                                 .to_string(),

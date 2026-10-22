@@ -54,6 +54,11 @@ pub fn markdown(task: &Task, state: &str, plan: &Plan) -> String {
     md
 }
 
+/// Read the spec.md of a task directory, if it exists.
+pub fn read(task_dir: &Path) -> Option<String> {
+    fs::read_to_string(task_dir.join(SPEC_FILE)).ok()
+}
+
 /// Write the spec.md of a task, inside its directory.
 pub fn write_brief(task_dir: &Path, task: &Task, state: &str, plan: &Plan) -> Result<()> {
     let mut md = markdown(task, state, plan);

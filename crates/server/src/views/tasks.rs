@@ -22,6 +22,8 @@ pub struct TaskView {
     pub progress: (usize, usize),
     /// The Gherkin acceptance criteria of the task, when it has some.
     pub scenario: Option<String>,
+    /// The fine-grained work description of the task, when it has one.
+    pub spec: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,5 +65,6 @@ pub fn task_view(
         progress: (done_count, steps.len()),
         plan: steps,
         scenario: dot::scenario::read(task_dir),
+        spec: dot::brief::read(task_dir),
     }
 }
