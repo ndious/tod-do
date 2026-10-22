@@ -1,0 +1,1 @@
+- [ ] web: remplacer la modal par un panneau lateral droit (backdrop + animation)
