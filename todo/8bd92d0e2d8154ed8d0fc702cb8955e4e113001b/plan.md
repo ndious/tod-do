@@ -1,4 +1,4 @@
 - [x] cli: rfr/test poussent les branches en bloquant (le diff console depend de la presence sur origin)
 - [x] web: liste par defaut, volet >= 50%, titres plan/spec/scenarios, spec dans TaskView + messages d'erreur du diff
-- [ ] server: spec.md dans TaskView
+- [x] server: spec.md dans TaskView
 - [ ] build + smoke + cycle
