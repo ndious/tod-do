@@ -4,14 +4,14 @@
 - **State**: todo
 - **Branch**: t/6193feb-scenarios-gherkin-scenario
 - **Created**: 2026-10-22 13:52:54 +0000
-- **Progress**: 3/4
+- **Progress**: 4/4
 
 ## Plan
 
 - [x] dot: scenario.feature (scaffold gherkin fr, read) + mention dans spec.md
 - [x] cli: tod scenario <id> (cree si absent, affiche)
 - [x] server+web: scenario dans TaskView + affichage overlay
-- [ ] tests + README + cycle complet
+- [x] tests + README + cycle complet
 
 ## Scénarios
 
