@@ -220,3 +220,25 @@ pre.gherkin {
 ul.keys { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem; }
 li.key { display: flex; align-items: center; gap: 0.6rem; justify-content: space-between; }
 li.key code { font-family: ui-monospace, monospace; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* view toggle + list view */
+.view-bar { display: flex; gap: 0.25rem; }
+.states-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.state-item { display: flex; flex-direction: column; }
+.state-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  background: var(--color-base-200, #111318);
+  border: none;
+  border-radius: 0.4rem;
+  color: inherit;
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.state-header .chevron { font-size: 0.7rem; opacity: 0.7; }
+.state-tasks { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }

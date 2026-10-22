@@ -950,6 +950,23 @@ pub fn app() -> Html {
     let route = use_state(current_route);
     // the task whose detail overlay is open, by identifier
     let selected = use_state(|| None::<String>);
+    // the task listing view: kanban columns, or a list of
+    // expandable states
+    #[derive(Clone, PartialEq)]
+    enum View {
+        Board,
+        List,
+    }
+    let view = use_state(|| View::Board);
+    // the states expanded in the list view (done and canceled
+    // start collapsed)
+    let open_states = use_state(|| {
+        let mut open = std::collections::HashSet::new();
+        for name in ["backlog", "todo", "review", "test"] {
+            open.insert(name.to_string());
+        }
+        open
+    });
     // the new-repository form state, used by the creation page
     let new_repo_name = use_state(String::new);
     let new_repo_url = use_state(String::new);
@@ -1217,6 +1234,56 @@ pub fn app() -> Html {
                         .map(|state| column(state.name.clone(), state.tasks.clone()))
                         .collect::<Html>();
 
+                    // the list view: one expandable section per
+                    // state, the same task cards inside
+                    let rows = s
+                        .states
+                        .iter()
+                        .map(|state| {
+                            let name = state.name.clone();
+                            let is_open = (*open_states).contains(&name);
+                            let toggle = {
+                                let open_states = open_states.clone();
+                                let name = name.clone();
+                                Callback::from(move |_| {
+                                    let mut next = (*open_states).clone();
+                                    if next.contains(&name) {
+                                        next.remove(&name);
+                                    } else {
+                                        next.insert(name.clone());
+                                    }
+                                    open_states.set(next);
+                                })
+                            };
+                            let count = state.tasks.len();
+                            let cards = state
+                                .tasks
+                                .iter()
+                                .map(|task| html! { <TaskCard task={task.clone()} on_open={on_open.clone()} /> })
+                                .collect::<Html>();
+                            html! {
+                                <section class="state-item">
+                                    <button class="state-header" onclick={toggle}>
+                                        <span class="chevron">{ if is_open { "▾" } else { "▸" } }</span>
+                                        { name.clone() }
+                                        <span class="count badge badge-sm badge-ghost">{ count }</span>
+                                    </button>
+                                    if is_open {
+                                        <ul class="state-tasks">{ cards }</ul>
+                                    }
+                                </section>
+                            }
+                        })
+                        .collect::<Html>();
+
+                    // the view toggle
+                    let to_board = { let view = view.clone(); Callback::from(move |_| view.set(View::Board)) };
+                    let to_list = { let view = view.clone(); Callback::from(move |_| view.set(View::List)) };
+                    let (board_class, list_class) = match *view {
+                        View::Board => ("btn btn-sm btn-primary", "btn btn-sm btn-ghost"),
+                        View::List => ("btn btn-sm btn-ghost", "btn btn-sm btn-primary"),
+                    };
+
                     // the overlay task is looked up in the fresh status on
                     // every render: a checked step updates it live
                     let detail = (*selected).clone().and_then(|uid| find_task(&s, &uid));
@@ -1235,12 +1302,17 @@ pub fn app() -> Html {
                                 if !clone_url.is_empty() {
                                     <CloneBar clone_url={clone_url} />
                                 }
+                                <div class="view-bar">
+                                    <button class={board_class} onclick={to_board}>{ "board" }</button>
+                                    <button class={list_class} onclick={to_list}>{ "list" }</button>
+                                </div>
                                 <button class="btn btn-sm" onclick={on_refresh}>{ "refresh" }</button>
                             </div>
                             <AddForm token={t.clone()} repo_id={id} on_refresh={refresh_status.clone()} />
-                            <div class="board">
-                                { columns }
-                            </div>
+                            { match *view {
+                                View::Board => html! { <div class="board">{ columns }</div> },
+                                View::List => html! { <div class="states-list">{ rows }</div> },
+                            } }
                             if let Some(task) = detail {
                                 <TaskDetail token={t.clone()} repo_id={id} task={task} {on_close} on_refresh={refresh_status.clone()} />
                             }
