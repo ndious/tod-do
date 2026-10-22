@@ -1,9 +1,11 @@
 # console: vue alternative en liste avec etats depliables
 
 - **UID**: d6cb68e3f1825271b4375d141695b2b666bd3562
-- **State**: backlog
+- **State**: todo
+- **Branch**: t/d6cb68e-console-vue-alternative-en
 - **Created**: 2026-10-22 21:00:11 +0000
+- **Progress**: 0/1
 
 ## Plan
 
-- [ ] (no step yet — `tod sub d6cb6 "..."`)
+- [ ] web: toggle board/list sur la page repo — liste avec etats depliables (done/canceled fermes par defaut)
