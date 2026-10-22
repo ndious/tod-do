@@ -1,4 +1,4 @@
 - [x] dot: scenario.feature (scaffold gherkin fr, read) + mention dans spec.md
 - [x] cli: tod scenario <id> (cree si absent, affiche)
-- [ ] server+web: scenario dans TaskView + affichage overlay
+- [x] server+web: scenario dans TaskView + affichage overlay
 - [ ] tests + README + cycle complet
