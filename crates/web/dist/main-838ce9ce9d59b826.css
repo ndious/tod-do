@@ -188,3 +188,24 @@ pre.diff {
 
 /* state selector of the detail overlay */
 .state-bar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+
+/* gherkin scenarios */
+pre.gherkin {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  max-height: 30vh;
+  overflow: auto;
+  background: var(--color-base-300, #1c1c1c);
+  padding: 0.8rem;
+  border-radius: 0.4rem;
+  white-space: pre;
+  margin: 0.3rem 0 0.6rem;
+}
+.modal-box h4 {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}

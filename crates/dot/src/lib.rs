@@ -7,23 +7,19 @@
 //! plus the git-native todo store and the project planning tools
 //! built on top of it.
 //!
-//! ## Planning layer
+//! ## Storage
 //!
-//! On top of the one-file-per-task storage, the library provides a
-//! project-wide planning layer:
-//!
-//! - `.tod/plan.dot`: a single central document tracking the plan
-//!   (micro-todo list) of every task that has one. Keys are task
-//!   uids, values are the tab-indented steps (`[x] done` /
-//!   `[ ] todo`), in the regular dot format.
-//! - `.tod/md/<uid>.md`: the generated spec markdown of each task,
-//!   the brief meant to be handed to a development agent.
-//!
-//! The plan file is the source of truth; markdowns are generated.
+//! The todos live in a dedicated `tod` branch: one directory per
+//! state (backlog, todo, review, test, done, canceled), one
+//! subdirectory per task named by its hash, holding `task.tod`
+//! (the task itself), `plan.md` (its micro-todo checklist),
+//! `spec.md` (the agent-facing work description) and optionally
+//! `scenario.feature` (its Gherkin acceptance criteria).
 
 pub mod brief;
 pub mod git;
 pub mod plan;
+pub mod scenario;
 pub mod schema;
 pub mod store;
 pub mod task;

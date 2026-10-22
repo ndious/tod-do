@@ -56,8 +56,16 @@ pub fn markdown(task: &Task, state: &str, plan: &Plan) -> String {
 
 /// Write the spec.md of a task, inside its directory.
 pub fn write_brief(task_dir: &Path, task: &Task, state: &str, plan: &Plan) -> Result<()> {
+    let mut md = markdown(task, state, plan);
+    if task_dir.join(crate::scenario::SCENARIO_FILE).is_file() {
+        md.push_str(
+            "\n## Scénarios\n\n`scenario.feature` holds the acceptance criteria of this task, \
+in French Gherkin. Convert every scenario into tests of the \
+project's own framework — they are the definition of done.\n",
+        );
+    }
     let path = task_dir.join(SPEC_FILE);
-    fs::write(&path, markdown(task, state, plan))
+    fs::write(&path, md)
         .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
 }

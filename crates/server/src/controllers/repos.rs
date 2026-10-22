@@ -175,7 +175,7 @@ async fn status(
         for task in &tasks {
             let dir = store.locate(&task.uid).map_err(wrap)?.1;
             let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
-            views.push(task_views::task_view(task, &name, &plan));
+            views.push(task_views::task_view(task, &name, &plan, &dir));
         }
         states.push(task_views::StateView { name, tasks: views });
     }
@@ -202,7 +202,7 @@ async fn add_task(
         .map_err(wrap)?;
     let dir = store.locate(&task.uid).map_err(wrap)?.1;
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
-    format::json(task_views::task_view(&task, "backlog", &plan))
+    format::json(task_views::task_view(&task, "backlog", &plan, &dir))
 }
 
 /// Add a step to a task's plan.
@@ -222,7 +222,7 @@ async fn add_sub(
     dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
     store.commit("tod: update plan").map_err(wrap)?;
     refresh_brief(&store, &task, &state)?;
-    format::json(task_views::task_view(&task, &state, &plan))
+    format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
 /// Toggle a step of a task's plan.
@@ -242,7 +242,7 @@ async fn check_step(
     dot::plan::Plan::save(&dir, &plan).map_err(wrap)?;
     store.commit("tod: update plan").map_err(wrap)?;
     refresh_brief(&store, &task, &state)?;
-    format::json(task_views::task_view(&task, &state, &plan))
+    format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
 /// Move a task to another state (the kanban columns).
@@ -259,7 +259,7 @@ async fn set_state(
     let (state, task) = store.find_task(&task.uid).map_err(wrap)?;
     let dir = store.locate(&task.uid).map_err(wrap)?.1;
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
-    format::json(task_views::task_view(&task, &state, &plan))
+    format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
 /// The code changes of a task's branch (its context) compared to a
@@ -295,7 +295,7 @@ async fn set_tags(
     let (state, task) = store.find_task(&task.uid).map_err(wrap)?;
     let dir = store.locate(&task.uid).map_err(wrap)?.1;
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
-    format::json(task_views::task_view(&task, &state, &plan))
+    format::json(task_views::task_view(&task, &state, &plan, &dir))
 }
 
 /// Regenerate the spec markdown, but only if it already exists.

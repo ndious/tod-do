@@ -20,6 +20,8 @@ pub struct TaskView {
     pub tags: Vec<String>,
     pub plan: Vec<StepView>,
     pub progress: (usize, usize),
+    /// The Gherkin acceptance criteria of the task, when it has some.
+    pub scenario: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,8 +39,14 @@ pub struct Status {
     pub states: Vec<StateView>,
 }
 
-/// Build the view of one task: state, branch, plan, progress.
-pub fn task_view(task: &dot::task::Task, state: &str, plan: &dot::plan::Plan) -> TaskView {
+/// Build the view of one task: state, branch, plan, progress,
+/// scenarios.
+pub fn task_view(
+    task: &dot::task::Task,
+    state: &str,
+    plan: &dot::plan::Plan,
+    task_dir: &std::path::Path,
+) -> TaskView {
     let steps: Vec<StepView> = plan
         .steps
         .iter()
@@ -54,5 +62,6 @@ pub fn task_view(task: &dot::task::Task, state: &str, plan: &dot::plan::Plan) ->
         tags: task.tags.clone(),
         progress: (done_count, steps.len()),
         plan: steps,
+        scenario: dot::scenario::read(task_dir),
     }
 }

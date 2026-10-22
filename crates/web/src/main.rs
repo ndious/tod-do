@@ -46,6 +46,8 @@ pub struct TaskView {
     pub tags: Vec<String>,
     pub plan: Vec<StepView>,
     pub progress: (usize, usize),
+    #[serde(default)]
+    pub scenario: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -563,6 +565,10 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                     <button type="submit" class="btn btn-sm">{ "save tags" }</button>
                 </form>
                 <ol class="plan">{ steps }</ol>
+                if let Some(scenario) = &task.scenario {
+                    <h4>{ "scénarios" }</h4>
+                    <pre class="gherkin">{ scenario.clone() }</pre>
+                }
                 <form class="sub" onsubmit={on_submit_step}>
                     <input
                         type="text"

@@ -1,6 +1,7 @@
+use std::fs;
 use std::io::{IsTerminal, Write};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use dot::brief;
 use dot::git;
@@ -174,6 +175,26 @@ pub fn brief(identifier: &str) -> Result<()> {
     brief::write_brief(&dir, &task, &state, &plan)?;
     store.commit(&format!("tod: brief {}", &task.uid[..7]))?;
     println!("{}", brief::markdown(&task, &state, &plan));
+    Ok(())
+}
+
+/// Print the Gherkin scenarios of a task. The file is scaffolded —
+/// in French Gherkin — when it does not exist yet, then printed:
+/// the user (or their AI assistant) fills it in.
+pub fn scenario(identifier: &str) -> Result<()> {
+    let store = Store::discover()?;
+    store.ensure_init()?;
+    let (_state, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
+    let path = dir.join(dot::scenario::SCENARIO_FILE);
+
+    if !path.is_file() {
+        fs::write(&path, dot::scenario::scaffold(&task))
+            .with_context(|| format!("cannot write {}", path.display()))?;
+        store.commit(&format!("tod: scenario {}", &task.uid[..7]))?;
+        println!("Created {} — fill the scenarios, then run it again to read", path.display());
+    }
+    println!("{}", fs::read_to_string(&path)?);
     Ok(())
 }
 
