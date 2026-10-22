@@ -719,9 +719,14 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
     let short = &task.uid[..task.uid.len().min(7)];
 
     html! {
-        <div class="modal modal-open" onclick={on_close.clone()}>
-            <div class="modal-box" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
-                <h3 class="text-lg font-bold">{ task.description.clone() }</h3>
+        <>
+            // clicking outside the panel closes it
+            <div class="panel-backdrop" onclick={on_close.clone()}></div>
+            <aside class="side-panel">
+                <div class="panel-top">
+                    <h3 class="text-lg font-bold">{ task.description.clone() }</h3>
+                    <button class="btn btn-ghost btn-sm" onclick={on_close.clone()}>{ "close" }</button>
+                </div>
                 <p class="meta">
                     { format!("{} — by {}", short, task.author) }
                     { for task.tags.iter().map(|tag| html! {
@@ -828,11 +833,8 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                         }
                     }
                 } }
-                <div class="modal-action">
-                    <button class="btn btn-sm" onclick={on_close}>{ "close" }</button>
-                </div>
-            </div>
-        </div>
+            </aside>
+        </>
     }
 }
 
