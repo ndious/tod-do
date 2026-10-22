@@ -23,6 +23,7 @@
 36900a151d602ec5a608a3da981c590b8057e288:
 	[ ] dot: layout par etat, task.tod avec champ Branch:, dossier t/ nomme par hash, find/load/move par etat
 	[ ] dot: plan.md et spec.md dans le dossier de la tache (fin du plan.dot central et du dossier md)
+	[ ] cli: tod state <id> <etat> + mapping start->todo, rfr->review, x->done, rm->canceled ; status/ls/ctx par etat et branche
 44a680cc4a6d9e518cb04f55d18adae74eee22b1:
 	[x] carte cliquable: on_open dans TaskCard, etat selected dans App, find_task par uid
 	[x] overlay TaskDetail: description, meta, plan cliquable, ajout de step, fermeture (bouton, fond, Escape)
