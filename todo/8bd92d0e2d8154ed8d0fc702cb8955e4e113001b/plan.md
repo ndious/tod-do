@@ -1,0 +1,1 @@
+- [ ] cli: rfr/test poussent les branches en bloquant (le diff console depend de la presence sur origin)
