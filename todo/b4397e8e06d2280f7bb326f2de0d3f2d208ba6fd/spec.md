@@ -4,8 +4,9 @@
 - **State**: todo
 - **Branch**: t/b4397e8-spec-md-redige-prompt-detaille
 - **Created**: 2026-10-22 21:56:33 +0000
-- **Progress**: 0/1
+- **Progress**: 0/2
 
 ## Plan
 
 - [ ] dot: module spec (scaffold prompt: analyse existant, recherches, reflexions, travail) — fin du brief genere
+- [ ] cli+server: plan/spec/brief servent le spec redige, plus de regeneration sur sub/check
