@@ -142,8 +142,10 @@ The console is a Yew 0.21 CSR app in `crates/web`, styled with
 [daisyUI](https://daisyui.com) (vendored full CSS, no npm in the
 build): login screen, then a header navbar and hash-based pages —
 repository list (`#/`), dedicated repository creation page (`#/new`),
-and a full task board per repository (`#/repo/{id}`) with clickable
-plans. Build it once with [Trunk](https://trunkrs.dev):
+a full task board per repository (`#/repo/{id}`) with clickable
+plans, and the account page (`#/account`): password change and the
+SSH keys that authenticate the git clients. Build it once with
+[Trunk](https://trunkrs.dev):
 
 ```bash
 rustup target add wasm32-unknown-unknown

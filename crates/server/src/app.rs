@@ -50,6 +50,7 @@ impl Hooks for App {
         AppRoutes::with_default_routes() // controller routes below
             .add_route(controllers::auth::routes())
             .add_route(controllers::auth::tod_routes())
+            .add_route(controllers::account::routes())
             .add_route(controllers::repos::routes())
             .add_route(controllers::keys::routes())
     }

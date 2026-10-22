@@ -78,6 +78,21 @@ pub struct RepoView {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AccountView {
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct KeyView {
+    pub id: i64,
+    #[serde(default)]
+    pub public_key: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct DiffResp {
     #[serde(default)]
     pub stat: String,
@@ -141,6 +156,7 @@ fn clear_token() {
 enum Route {
     Repos,
     NewRepo,
+    Account,
     Repo(i64),
 }
 
@@ -151,6 +167,9 @@ fn current_route() -> Route {
     let path = hash.trim().trim_start_matches('#').trim_matches('/');
     if path == "new" {
         return Route::NewRepo;
+    }
+    if path == "account" {
+        return Route::Account;
     }
     if let Some(id) = path.strip_prefix("repo/") {
         if let Ok(id) = id.parse() {
@@ -252,6 +271,18 @@ async fn api_post(token: &str, path: &str, body: &serde_json::Value) -> bool {
     }
 }
 
+/// DELETE returning whether it succeeded.
+async fn api_delete(token: &str, path: &str) -> bool {
+    match Request::delete(path)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+    {
+        Ok(resp) => resp.ok(),
+        Err(_) => false,
+    }
+}
+
 // ---------- components ----------
 
 #[derive(Properties, PartialEq)]
@@ -343,6 +374,182 @@ pub fn clone_bar(props: &CloneBarProps) -> Html {
                 { if *copied { "copied" } else { "copy" } }
             </button>
         </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct AccountPageProps {
+    pub token: String,
+}
+
+/// The account page: the logged-in user, their password, and their
+/// SSH keys — the ones the git clients authenticate with.
+#[function_component(AccountPage)]
+pub fn account_page(props: &AccountPageProps) -> Html {
+    let account = use_state(AccountView::default);
+    let keys = use_state(Vec::<KeyView>::new);
+    let message = use_state(String::new);
+    let current_pw = use_state(String::new);
+    let new_pw = use_state(String::new);
+    let new_key = use_state(String::new);
+
+    let refresh = {
+        let token = props.token.clone();
+        let account = account.clone();
+        let keys = keys.clone();
+        Callback::from(move |_| {
+            let (token, account, keys) = (token.clone(), account.clone(), keys.clone());
+            spawn_local(async move {
+                match api_get::<AccountView>(&token, "/api/account").await {
+                    ApiOutcome::Ok(a) => account.set(a),
+                    ApiOutcome::Unauthorized => {
+                        clear_token();
+                        navigate("#/");
+                    }
+                    ApiOutcome::Failed => {}
+                }
+                if let ApiOutcome::Ok(k) = api_get::<Vec<KeyView>>(&token, "/api/keys").await {
+                    keys.set(k);
+                }
+            });
+        })
+    };
+    {
+        let refresh = refresh.clone();
+        use_effect_with((), move |_| {
+            refresh.emit(());
+            || {}
+        });
+    }
+
+    let on_submit_password = {
+        let token = props.token.clone();
+        let current_pw = current_pw.clone();
+        let new_pw = new_pw.clone();
+        let message = message.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let (current, new) = ((*current_pw).clone(), (*new_pw).clone());
+            if current.is_empty() || new.len() < 8 {
+                message.set("the new password needs at least 8 characters".to_string());
+                return;
+            }
+            let (token, message) = (token.clone(), message.clone());
+            let (current_pw, new_pw) = (current_pw.clone(), new_pw.clone());
+            spawn_local(async move {
+                let body = serde_json::json!({ "current": current, "new": new });
+                if api_post(&token, "/api/account/password", &body).await {
+                    message.set("password changed".to_string());
+                    current_pw.set(String::new());
+                    new_pw.set(String::new());
+                } else {
+                    message.set("cannot change the password (wrong current password?)".to_string());
+                }
+            });
+        })
+    };
+
+    let on_add_key = {
+        let token = props.token.clone();
+        let new_key = new_key.clone();
+        let message = message.clone();
+        let refresh = refresh.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let key = (*new_key).clone();
+            if key.trim().is_empty() {
+                return;
+            }
+            let (token, message, refresh) = (token.clone(), message.clone(), refresh.clone());
+            let new_key = new_key.clone();
+            spawn_local(async move {
+                let body = serde_json::json!({ "public_key": key });
+                if api_post(&token, "/api/keys", &body).await {
+                    message.set(String::new());
+                    new_key.set(String::new());
+                    refresh.emit(());
+                } else {
+                    message.set("cannot add the key (invalid, or already registered?)".to_string());
+                }
+            });
+        })
+    };
+
+    let key_rows = (*keys)
+        .iter()
+        .map(|k| {
+            let token = props.token.clone();
+            let id = k.id;
+            let refresh = refresh.clone();
+            let onclick = Callback::from(move |_| {
+                let (token, id, refresh) = (token.clone(), id, refresh.clone());
+                spawn_local(async move {
+                    if api_delete(&token, &format!("/api/keys/{id}")).await {
+                        refresh.emit(());
+                    }
+                });
+            });
+            // "ssh-ed25519 AAAA… user@laptop" -> type + short blob
+            let display = match k.public_key.split_once(' ') {
+                Some((kind, blob)) => format!("{kind} {}…", &blob[..blob.len().min(24)]),
+                None => k.public_key.clone(),
+            };
+            html! {
+                <li class="key">
+                    <code>{ display }</code>
+                    <button class="btn btn-ghost btn-xs" {onclick}>{ "delete" }</button>
+                </li>
+            }
+        })
+        .collect::<Html>();
+
+    html! {
+        <section class="account">
+            <h2>{ format!("account — {} ({})", (*account).email, (*account).name) }</h2>
+
+            <div class="card bg-base-100 account-card">
+                <h3>{ "change password" }</h3>
+                <form class="account-form" onsubmit={on_submit_password}>
+                    <input
+                        type="password"
+                        class="input input-bordered"
+                        placeholder="current password"
+                        value={(*current_pw).clone()}
+                        oninput={Callback::from(move |e: InputEvent| current_pw.set(input_value(e)))}
+                    />
+                    <input
+                        type="password"
+                        class="input input-bordered"
+                        placeholder="new password (8+ characters)"
+                        value={(*new_pw).clone()}
+                        oninput={Callback::from(move |e: InputEvent| new_pw.set(input_value(e)))}
+                    />
+                    <button type="submit" class="btn btn-primary">{ "change" }</button>
+                </form>
+            </div>
+
+            <div class="card bg-base-100 account-card">
+                <h3>{ "ssh keys" }</h3>
+                <p class="meta">
+                    { "the keys authenticate your git pushes: ssh://git@host:2222/<repo>.git" }
+                </p>
+                <ul class="keys">{ key_rows }</ul>
+                <form class="account-form" onsubmit={on_add_key}>
+                    <input
+                        type="text"
+                        class="input input-bordered"
+                        placeholder="ssh-ed25519 AAAA… you@laptop"
+                        value={(*new_key).clone()}
+                        oninput={Callback::from(move |e: InputEvent| new_key.set(input_value(e)))}
+                    />
+                    <button type="submit" class="btn btn-primary">{ "add key" }</button>
+                </form>
+            </div>
+
+            if !(*message).is_empty() {
+                <p class="meta">{ (*message).clone() }</p>
+            }
+        </section>
     }
 }
 
@@ -969,6 +1176,7 @@ pub fn app() -> Html {
                         </section>
                     }
                 }
+                Route::Account => html! { <AccountPage token={t.clone()} /> },
                 Route::Repo(id) => {
                     let on_refresh = {
                         let refresh_status = refresh_status.clone();
@@ -1048,6 +1256,7 @@ pub fn app() -> Html {
                         <nav>
                             <a href="#/">{ "repositories" }</a>
                             <a href="#/new">{ "new repository" }</a>
+                            <a href="#/account">{ "account" }</a>
                         </nav>
                         <button class="btn btn-ghost btn-sm" onclick={on_logout}>{ "log out" }</button>
                     </header>

@@ -209,3 +209,14 @@ pre.gherkin {
   letter-spacing: 0.06em;
   opacity: 0.6;
 }
+
+/* account page */
+.account { max-width: 40rem; }
+.account h2 { margin-bottom: 1rem; }
+.account h3 { font-size: 0.95rem; margin-bottom: 0.6rem; }
+.account-card { padding: 1rem; margin-bottom: 1rem; }
+.account-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.account-form input[type="text"], .account-form input[type="password"] { flex: 1; min-width: 12rem; }
+ul.keys { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem; }
+li.key { display: flex; align-items: center; gap: 0.6rem; justify-content: space-between; }
+li.key code { font-family: ui-monospace, monospace; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

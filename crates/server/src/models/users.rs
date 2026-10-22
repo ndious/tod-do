@@ -211,6 +211,25 @@ impl Model {
         hash::verify_password(password, &self.password)
     }
 
+    /// Change the password of a user. Only the password column is
+    /// written; the caller verifies the current password first.
+    pub async fn set_password(
+        db: &DatabaseConnection,
+        id: i64,
+        new_password: &str,
+    ) -> ModelResult<()> {
+        let password_hash =
+            hash::hash_password(new_password).map_err(|e| ModelError::Any(e.into()))?;
+        users::ActiveModel {
+            id: sea_orm::Set(id),
+            password: sea_orm::Set(password_hash),
+            ..Default::default()
+        }
+        .update(db)
+        .await?;
+        Ok(())
+    }
+
     /// Asynchronously creates a user with a password and saves it to the
     /// database.
     ///
