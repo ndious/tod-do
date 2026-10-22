@@ -1,2 +1,2 @@
 - [x] web: remplacer la modal par un panneau lateral droit (backdrop + animation)
-- [ ] build + smoke + cycle
+- [x] build + smoke + cycle
