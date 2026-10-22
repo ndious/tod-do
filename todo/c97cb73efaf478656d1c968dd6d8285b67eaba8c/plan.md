@@ -1,0 +1,1 @@
+- [ ] server: GET /api/account + POST /api/account/password (verification du mot de passe courant)
