@@ -12,3 +12,7 @@
 - [ ] cli: tod scenario <id> (cree si absent, affiche)
 - [ ] server+web: scenario dans TaskView + affichage overlay
 - [ ] tests + README + cycle complet
+
+## Scénarios
+
+`scenario.feature` holds the acceptance criteria of this task, in French Gherkin. Convert every scenario into tests of the project's own framework — they are the definition of done.
