@@ -4,11 +4,11 @@
 - **State**: todo
 - **Branch**: t/8bd92d0-console-vue-liste-par-defaut
 - **Created**: 2026-10-22 21:25:57 +0000
-- **Progress**: 3/4
+- **Progress**: 4/4
 
 ## Plan
 
 - [x] cli: rfr/test poussent les branches en bloquant (le diff console depend de la presence sur origin)
 - [x] web: liste par defaut, volet >= 50%, titres plan/spec/scenarios, spec dans TaskView + messages d'erreur du diff
 - [x] server: spec.md dans TaskView
-- [ ] build + smoke + cycle
+- [x] build + smoke + cycle
