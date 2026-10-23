@@ -8,29 +8,40 @@ management server** (login, SQLite, Yew web console, Docker image).
 
 ## Main concepts
 
-- A git branch is a **context**: switch branches and you switch todos.
-- One task = one independent plain-text file, to avoid merge conflicts.
-- Each task file is named by a **sha1 identifier**. Like git commits,
-  you only need the first characters of an identifier to target a task.
-- A **backlog** holds tasks that do not belong to any branch yet.
-- Complex tasks get a **plan** (micro todo list) and a **spec
-  markdown** (the brief you hand to a development agent).
+- A task has a **state** — backlog, todo, review, test, done,
+  canceled — the console's kanban columns: the state is the
+  directory holding the task.
+- One task = one directory named by its **sha1 uid**. Like git
+  commits, you only need the first characters to target a task.
+- A task being worked on carries its **working branch**
+  (`t/<uid7>-<slug>`), created from `main` by `tod start`.
+- A **backlog** holds the tasks not started yet.
+- Complex tasks get a **plan** (`plan.md`, a clickable micro todo
+  list), a **spec** (`spec.md`, the authored detailed prompt) and
+  optional **Gherkin scenarios** (`scenario.feature`, the
+  acceptance criteria).
+- Tasks carry free-form **tags** (`#rust`, `#cli`).
 
 ## Planning & agentic workflow
 
 ```
-tod plan "Fix the login bug"     # task + plan + spec markdown skeleton
+tod plan "Fix the login bug"         # task + plan + spec scaffold
+tod spec 919fe -e                    # write the detailed prompt
+tod scenario 919fe -e               # write the acceptance criteria
 tod sub 919fe "Investigate expiry"   # add a micro todo to the plan
 tod check 919fe 1                    # toggle step 1
-tod brief 919fe                      # (re)generate + print the brief
-tod status                           # backlog & contexts with progress
+tod brief 919fe                      # read the spec
+tod status                           # every state, with progress
 ```
 
-The **brief** is a self-contained markdown (objective, context,
-status, plan with progress) meant to be pasted into an AI coding
-agent. The agent executes the next step, the human runs
-`tod check`, and the brief always reflects the real state: the
-plan is the communication protocol between human and agent.
+The **spec is the detailed prompt of the task**: analysis of the
+existing code, the research, the reflections, and the work to
+realize — written by the human **and** the agent, never generated.
+The agent reads it, executes the plan one micro todo at a time,
+enriches the spec with its findings, and converts the scenarios
+into tests of the project's own framework — they are the
+definition of done. The plan is the communication protocol between
+human and agent; the spec is the shared brain.
 
 ## Agent skill
 
@@ -98,16 +109,22 @@ process working directory; production ships its own config
 API (all task endpoints are scoped per repository and need the
 `Authorization: Bearer <token>` header):
 
-- `POST /api/login {username, password}` → `{token}`
-- `GET /api/repos` — list managed repositories
+- `POST /api/login {username, password}` → `{token}` (username = email)
+- `POST /api/auth/register {email, name, password}` — create a user
+- `GET /api/account` — the logged-in user
+- `POST /api/account/password {current, new}` — change the password
+- `GET /api/repos` — list managed repositories (with their SSH `clone_url`)
 - `POST /api/repos {name, url}` — register an existing repository (clone + validate)
 - `POST /api/repos {name, url: ""}` — **create** a new repository here (like GitHub),
   immediately clonable over SSH and tod-ready
 - `DELETE /api/repos/:id` — unregister (the clone stays on disk)
-- `GET /api/repos/:id/status` — branch, backlog, contexts, plans, progress
-- `POST /api/repos/:id/task {description, context}`
-- `POST /api/repos/:id/sub {uid, text}`
-- `POST /api/repos/:id/check {uid, number}`
+- `GET /api/repos/:id/status` — the kanban board: every state with its
+  tasks (plan, progress, spec, scenarios, branch, tags)
+- `GET /api/repos/:id/diff?branch=&base=` — the code changes of a
+  branch, for the console's task detail
+- `POST /api/repos/:id/task {description}` — new task in the backlog
+- `POST /api/repos/:id/sub {uid, text}` / `.../check {uid, number}`
+- `POST /api/repos/:id/tag {uid, tags}` / `.../state {uid, state}`
 - `GET/POST /api/keys` — list / register your SSH public keys
 - `DELETE /api/keys/:id` — remove one of your keys
 
@@ -173,8 +190,6 @@ docker run -p 8080:8080 -p 2222:2222 \
   host key, and the mirrored repositories (`repos/`).
 - Create the first user in the container:
   `docker exec <container> tod-server --environment production task user:create email:you@example.com name:You password:secret`.
-- The first start creates the admin account from the environment
-  variables; afterwards users come from the database.
 - `git` is included in the image (clone/pull at runtime).
 
 ## Storage layout
@@ -231,7 +246,7 @@ warning. A fresh clone recovers the branch automatically, and
 ```
 crates/dot     the dot library: document format (schema, parser,
                stringifier, typed fields), Task, git helpers, Store,
-               planning (plan, brief)
+               planning (plan, spec, scenario)
 crates/cli     the CLI (clap) built on top of the dot crate,
                binary name: tod
 crates/server  the multi-repo project management server (axum):
@@ -240,24 +255,26 @@ crates/server  the multi-repo project management server (axum):
 crates/web     the Yew (CSR) web console, built with Trunk
 ```
 
+Each crate carries its own README with the details.
+
 ## Task file format
 
-One file per task, named by its sha1 uid:
+One directory per task, named by its sha1 uid, holding `task.tod`:
 
 ```text
 Description: Fix the login bug
 Author: ndious
 Created: 2026-10-06 18:12:44 +0000
 Updated: 2026-10-06 18:12:44 +0000
-Done: 0
+Branch: t/919fea9-fix-the-login-bug
+Tags: rust, auth
 ```
 
-And the central plan document (`plan.dot`):
+The plan (`plan.md`) is a plain markdown checklist:
 
-```text
-919fea91dd3193458488c70d168c5515362cbada:
-    [x] Investigate the session expiry
-    [ ] Add refresh token to auth.rs
+```markdown
+- [x] Investigate the session expiry
+- [ ] Add refresh token to auth.rs
 ```
 
 ## Install
@@ -274,7 +291,7 @@ cargo install --path crates/cli
 tod init                    # create the tod branch storage (+ skill)
 tod skill / skill --remove  # install / remove the agent skill
 tod add "Small fix"        # a plain todo
-tod plan "Complex feature" # a task with a plan + spec markdown
+tod plan "Complex feature" # a task + plan + spec scaffold
 tod sub 919fe "Next step"  # add a micro todo to a plan
 tod check 919fe 1          # toggle a step
 tod brief 919fe            # the spec of a task — its detailed prompt
@@ -283,7 +300,7 @@ tod scenario 919fe        # the Gherkin scenarios (scaffolded in French when mis
 tod scenario 919fe -e      # ... or edit them in your editor
 tod status                 # project overview with progress
 tod ls / ls -b             # todos left to do (-a: also the done ones)
-tod ls -A                   # every context (same filters)
+tod ls -A                   # every state (same filters)
 tod ls -t rust              # only the tasks carrying a tag
 tod x 919fe                # task done (moves to the done state)
 tod rfr 919fe              # ready for review + push the work branch
@@ -291,11 +308,11 @@ tod test 919fe             # move to the test state: work merged into the test b
 tod state 919fe test       # move a task to any state
 tod tag 919fe rust cli      # replace the tags (none clears them)
 tod rm 919fe               # cancel a task (kept in the canceled state)
-tod mv 919fe / mv -b       # backlog <-> context
+tod mv 919fe / mv -b       # backlog <-> current branch
 tod start 919fe            # work branch for a task (from main, --base to stack)
-tod finish                 # rebase + ff-merge into main, delete branch, close context
-tod ctx                    # contexts with todos
-tod resolve feature/login  # close a context
+tod finish                 # rebase + ff-merge into main, tasks done, branch cleanup
+tod ctx                    # branches with active tasks
+tod resolve feature/login  # cancel the active tasks of a branch
 tod export todos.json      # export the whole database
 tod completions bash       # shell completion script (bash, zsh, fish…)
 ```
@@ -338,8 +355,11 @@ cancels it (the directory is kept for the record).
 - No redux: plain, explicit functions. Errors are reported, never swallowed.
 - Storage in a dedicated `tod` git branch managed through a hidden
   worktree, instead of `.dot` files in the working tree (2026-10).
-- New: the planning layer (plan.dot + spec markdowns) for complex
-  tasks and agentic development.
+- New: state directories (backlog, todo, review, test, done,
+  canceled) with the working branch as a task field.
+- New: the planning layer (per-task `plan.md`, the authored
+  `spec.md` prompt, Gherkin scenarios) for complex tasks and
+  agentic development.
 - New: the installable agent skill (SKILL.md, per-agent folder).
 - New: the multi-repo management server (axum, login, SQLite) and
   the Yew web console, shipped as an Alpine Docker image.
