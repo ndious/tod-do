@@ -1,1 +1,2 @@
 - [ ] server: POST /task accepte tags, spec et scenario (ecriture des fichiers)
+- [ ] web: page #/new-task/{repo} — helpers sections spec, generateur scenario gherkin, tags
