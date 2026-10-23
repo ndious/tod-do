@@ -244,16 +244,16 @@ pub fn fetch(dir: &Path, remote: &str) -> Result<()> {
         .with_context(|| format!("cannot fetch '{remote}'"))
 }
 
-/// Fetch a single branch to FETCH_HEAD, without updating any ref:
-/// a mirror (the server) cannot fetch into its checked-out tod
-/// branch, and has no remote-tracking refs. The refspec has no
-/// destination on purpose (the commit lands in FETCH_HEAD), and
-/// --update-head-ok lifts the refusal to fetch the branch checked
-/// out in the worktree.
-pub fn fetch_ref(dir: &Path, remote: &str, branch: &str) -> Result<()> {
+/// Fetch a branch into the scratch ref `refs/tod-sync`. A mirror
+/// (the server) cannot fetch into its checked-out tod branch, and
+/// no fetch may ever move the branch backward: the caller
+/// fast-forwards from the scratch ref, nothing else. The
+/// explicit destination keeps git from touching the checked-out
+/// branch and needs no --update-head-ok.
+pub fn fetch_to_scratch(dir: &Path, remote: &str, branch: &str) -> Result<()> {
     git(
         dir,
-        &["fetch", "--quiet", "--update-head-ok", remote, &format!("refs/heads/{branch}")],
+        &["fetch", "--quiet", remote, &format!("refs/heads/{branch}:refs/tod-sync")],
     )
         .map(|_| ())
         .with_context(|| format!("cannot fetch '{branch}' from '{remote}'"))
@@ -267,18 +267,25 @@ pub fn merge_ff_only(dir: &Path, from: &str) -> Result<()> {
         .with_context(|| format!("cannot fast-forward to '{from}'"))
 }
 
-/// Reset the worktree at 'dir' to its HEAD, files and index. Only
-/// for machine-managed worktrees (the tod storage): a fetch in a
-/// mirror moves the checked-out ref without touching the tree.
-pub fn reset_hard(dir: &Path) -> Result<()> {
-    git(dir, &["reset", "--hard", "HEAD"])
-        .map(|_| ())
-        .context("git reset --hard failed")
+/// Is this remote a mirror clone? A mirror refuses any refspec on
+/// push: the push mirrors every ref instead.
+fn is_mirror(dir: &Path, remote: &str) -> bool {
+    let out = Command::new("git")
+        .args(["config", "--bool", &format!("remote.{remote}.mirror")])
+        .current_dir(dir)
+        .output();
+    matches!(out, Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
 }
 
-/// Push a branch to a remote, creating it there if needed.
+/// Push a branch to a remote, creating it there if needed. In a
+/// mirror clone every ref is pushed — a refspec would be refused.
 pub fn push(dir: &Path, remote: &str, branch: &str) -> Result<()> {
-    git(dir, &["push", "--quiet", remote, branch])
+    let args: Vec<&str> = if is_mirror(dir, remote) {
+        vec!["push", "--quiet", remote]
+    } else {
+        vec!["push", "--quiet", remote, branch]
+    };
+    git(dir, &args)
         .map(|_| ())
         .with_context(|| format!("cannot push '{branch}' to '{remote}'"))
 }
@@ -291,9 +298,15 @@ pub fn push(dir: &Path, remote: &str, branch: &str) -> Result<()> {
 /// fast-forwards. The child is reaped by a detached thread, so a
 /// long-lived server process never accumulates zombies.
 pub fn spawn_push(dir: &Path, remote: &str, branch: &str) -> Result<()> {
+    // a mirror refuses refspecs: push every ref instead
+    let push_args = if is_mirror(dir, remote) {
+        format!("{remote}")
+    } else {
+        format!("{remote} {branch}")
+    };
     let script = format!(
         "i=0; while [ $i -lt 5 ]; do \
-         git push --quiet {remote} {branch} 2>/dev/null && exit 0; \
+         git push --quiet {push_args} 2>/dev/null && exit 0; \
          i=$((i+1)); sleep 1; done; exit 1"
     );
     let mut child = Command::new("sh")

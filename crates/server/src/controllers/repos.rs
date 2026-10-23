@@ -22,6 +22,14 @@ pub struct AddRepoParams {
 #[derive(Debug, Deserialize)]
 pub struct AddTaskParams {
     pub description: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// The authored spec of the task, written as-is.
+    #[serde(default)]
+    pub spec: Option<String>,
+    /// The Gherkin scenarios of the task, written as-is.
+    #[serde(default)]
+    pub scenario: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -201,6 +209,23 @@ async fn add_task(
         .add_in(true, params.description.trim(), "web")
         .map_err(wrap)?;
     let dir = store.locate(&task.uid).map_err(wrap)?.1;
+
+    // the whole creation lands in one commit
+    if !params.tags.is_empty() {
+        store.set_tags(&task.uid, params.tags.clone()).map_err(wrap)?;
+    }
+    if let Some(spec) = params.spec.clone().filter(|s| !s.trim().is_empty()) {
+        std::fs::write(dir.join(dot::spec::SPEC_FILE), spec)
+            .map_err(|e| Error::string(&format!("cannot write the spec: {e}")))?;
+    }
+    if let Some(scenario) = params.scenario.clone().filter(|s| !s.trim().is_empty()) {
+        std::fs::write(dir.join(dot::scenario::SCENARIO_FILE), scenario)
+            .map_err(|e| Error::string(&format!("cannot write the scenario: {e}")))?;
+    }
+    // always: set_tags already committed, this sweeps the spec and
+    // the scenario (and the creation itself when nothing else did)
+    store.commit(&format!("tod: create {}", &task.uid[..7])).map_err(wrap)?;
+
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
     format::json(task_views::task_view(&task, "backlog", &plan, &dir))
 }

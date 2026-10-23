@@ -12,5 +12,5 @@ serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen = "0.2"
 wasm-bindgen-futures.workspace = true
-web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement", "Window", "Storage", "EventTarget", "Location", "KeyboardEvent", "Navigator", "Clipboard"] }
+web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement", "HtmlTextAreaElement", "Window", "Storage", "EventTarget", "Location", "KeyboardEvent", "Navigator", "Clipboard"] }
 yew.workspace = true

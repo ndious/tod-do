@@ -166,6 +166,7 @@ fn clear_token() {
 enum Route {
     Repos,
     NewRepo,
+    NewTask(i64),
     Account,
     Repo(i64),
 }
@@ -180,6 +181,11 @@ fn current_route() -> Route {
     }
     if path == "account" {
         return Route::Account;
+    }
+    if let Some(id) = path.strip_prefix("new-task/") {
+        if let Ok(id) = id.parse() {
+            return Route::NewTask(id);
+        }
     }
     if let Some(id) = path.strip_prefix("repo/") {
         if let Ok(id) = id.parse() {
@@ -400,6 +406,180 @@ pub fn clone_bar(props: &CloneBarProps) -> Html {
             </button>
         </div>
     }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct NewTaskPageProps {
+    pub token: String,
+    pub repo_id: i64,
+}
+
+/// The task creation page: description, tags, and the two authored
+/// documents — the spec (with its section palette) and the Gherkin
+/// scenarios (with a scenario generator) — all optional but
+/// scaffolded, so writing them is filling a form, not facing a
+/// blank page.
+#[function_component(NewTaskPage)]
+pub fn new_task_page(props: &NewTaskPageProps) -> Html {
+    let description = use_state(String::new);
+    let tags = use_state(String::new);
+    // the spec scaffold: the prompt sections, ready to fill
+    let spec = use_state(|| {
+        "# Titre de la tâche\n\n## Analyse de l'existant\n\n\n\n## Recherches\n\n\n\n## Réflexions\n\n\n\n## Travail à réaliser\n\n\n".to_string()
+    });
+    let scenario = use_state(String::new);
+    let message = use_state(String::new);
+
+    /// Append a text to a use_state<String>, keeping it alive
+    /// between renders (the textareas are uncontrolled).
+    fn append(state: &yew::UseStateHandle<String>, text: &str) {
+        let mut next = (*(*state)).clone();
+        if !next.ends_with('\n') {
+            next.push('\n');
+        }
+        next.push_str(text);
+        state.set(next);
+    }
+
+    // the spec section palette: one click, one section heading
+    let spec_helpers = [
+        ("analyse de l'existant", "## Analyse de l'existant\n\n\n\n"),
+        ("recherches", "## Recherches\n\n\n\n"),
+        ("réflexions", "## Réflexions\n\n\n\n"),
+        ("travail à réaliser", "## Travail à réaliser\n\n\n\n"),
+        ("code", "```rust\n\n```\n"),
+    ];
+    let spec_buttons = spec_helpers
+        .iter()
+        .map(|(label, text)| {
+            let spec = spec.clone();
+            let text = text.to_string();
+            let onclick = Callback::from(move |_| append(&spec, &text));
+            html! { <button class="btn btn-outline btn-xs" {onclick}>{ *label }</button> }
+        })
+        .collect::<Html>();
+
+    // the Gherkin scenario generator: the skeleton of a scenario,
+    // French keywords included
+    let add_scenario = {
+        let scenario = scenario.clone();
+        Callback::from(move |_| {
+            append(
+                &scenario,
+                "  Scénario: nom du scénario\n    Étant donné ...\n    Quand ...\n    Alors ...\n\n",
+            );
+        })
+    };
+
+    let on_submit = {
+        let token = props.token.clone();
+        let repo_id = props.repo_id;
+        let description = description.clone();
+        let tags = tags.clone();
+        let spec = spec.clone();
+        let scenario = scenario.clone();
+        let message = message.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let desc = (*description).clone();
+            if desc.trim().is_empty() {
+                message.set("a task needs a description".to_string());
+                return;
+            }
+            let body = serde_json::json!({
+                "description": desc,
+                "tags": (*tags).split(',').map(str::trim).filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>(),
+                "spec": if (*spec).trim().is_empty() { serde_json::Value::Null }
+                        else { serde_json::Value::String((*spec).clone()) },
+                "scenario": if (*scenario).trim().is_empty() { serde_json::Value::Null }
+                            else { serde_json::Value::String((*scenario).clone()) },
+            });
+            let (token, message) = (token.clone(), message.clone());
+            spawn_local(async move {
+                let path = format!("/api/repos/{repo_id}/task");
+                match api_post_json::<TaskView>(&token, &path, &body).await {
+                    ApiOutcome::Ok(task) => {
+                        navigate(&format!("#/repo/{repo_id}"));
+                        let _ = task;
+                    }
+                    ApiOutcome::Unauthorized => {
+                        clear_token();
+                        navigate("#/");
+                    }
+                    ApiOutcome::Failed(e) => {
+                        message.set(format!("cannot create the task: {e}"));
+                    }
+                }
+            });
+        })
+    };
+
+    html! {
+        <section class="new-task">
+            <h2>{ "new task" }</h2>
+            <form onsubmit={on_submit}>
+                <input
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="description"
+                    value={(*description).clone()}
+                    oninput={Callback::from(move |e: InputEvent| description.set(input_value(e)))}
+                />
+                <input
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="tags, comma separated (rust, cli…)"
+                    value={(*tags).clone()}
+                    oninput={Callback::from(move |e: InputEvent| tags.set(input_value(e)))}
+                />
+
+                <div class="field">
+                    <h3>{ "spec" }</h3>
+                    <p class="meta">{ "le prompt détaillé de la tâche — analyse, recherches, réflexions, travail" }</p>
+                    <div class="helper-bar">{ spec_buttons }</div>
+                    <textarea
+                        class="textarea textarea-bordered"
+                        spellcheck="false"
+                        value={(*spec).clone()}
+                        oninput={Callback::from(move |e: InputEvent| spec.set(textarea_value(e)))}
+                    ></textarea>
+                </div>
+
+                <div class="field">
+                    <h3>{ "scénarios" }</h3>
+                    <p class="meta">{ "les critères d'acceptation, en Gherkin français — la définition du fini" }</p>
+                    <div class="helper-bar">
+                        <button class="btn btn-outline btn-xs" onclick={add_scenario}>{ "nouveau scénario" }</button>
+                    </div>
+                    <textarea
+                        class="textarea textarea-bordered"
+                        spellcheck="false"
+                        placeholder={"# language: fr\nFonctionnalité: …\n"}
+                        value={(*scenario).clone()}
+                        oninput={Callback::from(move |e: InputEvent| scenario.set(textarea_value(e)))}
+                    ></textarea>
+                    <pre class="gherkin gherkin-cheat">{
+                        "# language: fr\nFonctionnalité: <but>\n  Scénario: <cas>\n    Étant donné <un contexte>\n    Quand <une action>\n    Alors <un résultat>\n    Et <un complément>\n"
+                    }</pre>
+                </div>
+
+                if !(*message).is_empty() {
+                    <p class="error">{ (*message).clone() }</p>
+                }
+                <button type="submit" class="btn btn-primary">{ "create the task" }</button>
+            </form>
+        </section>
+    }
+}
+
+/// The current value of a textarea event.
+fn textarea_value(e: InputEvent) -> String {
+    e.target()
+        .expect("textarea without target")
+        .dyn_into::<web_sys::HtmlTextAreaElement>()
+        .expect("not a textarea")
+        .value()
 }
 
 #[derive(Properties, PartialEq)]
@@ -1229,6 +1409,7 @@ pub fn app() -> Html {
                     }
                 }
                 Route::Account => html! { <AccountPage token={t.clone()} /> },
+                Route::NewTask(id) => html! { <NewTaskPage token={t.clone()} repo_id={id} /> },
                 Route::Repo(id) => {
                     let on_refresh = {
                         let refresh_status = refresh_status.clone();
@@ -1341,6 +1522,7 @@ pub fn app() -> Html {
                                     <button class={board_class} onclick={to_board}>{ "board" }</button>
                                     <button class={list_class} onclick={to_list}>{ "list" }</button>
                                 </div>
+                                <a class="btn btn-sm btn-primary" href={format!("#/new-task/{id}")}>{ "new task" }</a>
                                 <button class="btn btn-sm" onclick={on_refresh}>{ "refresh" }</button>
                             </div>
                             <AddForm token={t.clone()} repo_id={id} on_refresh={refresh_status.clone()} />

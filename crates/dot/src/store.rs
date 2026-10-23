@@ -310,15 +310,13 @@ impl Store {
                 let _ = git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH);
                 self.mark_push();
             }
-        } else if git::fetch_ref(&self.tod_dir, "origin", TOD_BRANCH).is_ok() {
-            // a mirror (the server) has no remote-tracking refs, and
-            // its 'tod' branch is checked out in the worktree:
-            // --update-head-ok lets the fetch move the ref directly,
-            // but the working tree is not touched. Fast-forward when
-            // the fetch did not, then resync the tree — the worktree
-            // is machine-managed, safe to hard reset.
-            let _ = git::merge_ff_only(&self.tod_dir, "FETCH_HEAD");
-            git::reset_hard(&self.tod_dir)?;
+        } else if git::fetch_to_scratch(&self.tod_dir, "origin", TOD_BRANCH).is_ok() {
+            // a mirror (the server) has no remote-tracking refs and
+            // its 'tod' branch is checked out in the worktree: the
+            // fetch landed in the scratch ref, and the fast-forward
+            // — never anything backward — updates the branch and
+            // the worktree in one move.
+            git::merge_ff_only(&self.tod_dir, "refs/tod-sync")?;
         }
         // mark the pull as fresh
         if let Some(marker) = self.pull_marker() {

@@ -314,3 +314,22 @@ li.key code { font-family: ui-monospace, monospace; font-size: 0.75rem; overflow
   gap: 0.8rem;
 }
 .panel-top h3 { margin: 0; }
+
+/* task creation page */
+.new-task { max-width: 50rem; }
+.new-task h2 { margin-bottom: 1rem; }
+.new-task h3 { font-size: 0.95rem; margin-bottom: 0.2rem; }
+.new-task input { margin-bottom: 0.6rem; }
+.field { margin-bottom: 1.2rem; }
+.helper-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.5rem 0; }
+.textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  min-height: 12rem;
+  resize: vertical;
+  background: var(--color-base-100, #1d232a);
+  color: inherit;
+}
+.gherkin-cheat { max-height: 12rem; opacity: 0.75; }
