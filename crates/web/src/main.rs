@@ -104,6 +104,14 @@ pub struct DiffResp {
     pub truncated: bool,
 }
 
+/// Render a markdown document as html — the specs are authored
+/// content, safe to inline in the panel.
+fn markdown_to_html(md: &str) -> String {
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new(md));
+    html
+}
+
 /// Percent-encode a value for a query string (branch names are slugs,
 /// but they can carry accents).
 fn urlencode(s: &str) -> String {
@@ -810,7 +818,7 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
                 </form>
                 if let Some(spec) = &task.spec {
                     <h4>{ "spec" }</h4>
-                    <pre class="doc">{ spec.clone() }</pre>
+                    <div class="doc" dangerously_set_inner_html={markdown_to_html(spec)}></div>
                 }
                 if let Some(scenario) = &task.scenario {
                     <h4>{ "scénarios" }</h4>
