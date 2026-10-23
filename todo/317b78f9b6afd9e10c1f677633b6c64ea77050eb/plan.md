@@ -1,5 +1,5 @@
 - [x] server: POST /task accepte tags, spec et scenario (ecriture des fichiers)
-- [ ] web: page #/new-task/{repo} — helpers sections spec, generateur scenario gherkin, tags
+- [x] web: page #/new-task/{repo} — helpers sections spec, generateur scenario gherkin, tags
 - [ ] build + smoke + cycle
 - [ ] fix perte de donnees: push mirror-aware (mirror=true refuse les refspecs), fetch vers refs/tod-sync + ff-only (jamais de force-update arriere)
 - [ ] fix add_task: commit systematique du spec/scenario
