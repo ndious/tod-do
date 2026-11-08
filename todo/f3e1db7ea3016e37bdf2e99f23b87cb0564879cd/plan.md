@@ -2,3 +2,4 @@
 - [ ] CLI: tod verify [cible] — nom d'outil ou defaut, exit code propage
 - [ ] tod verify <id>: fichiers modifies de la branche -> reunion des outils couvrant, sinon defaut
 - [ ] dogfooder .tod.toml du depot: outils cli (cargo test -p dot -p cli) et server (cargo test -p server), defaut cargo test — rien pour crates/web, interface humaine
+- [ ] docs: READMEs racine, dot, cli
