@@ -3,3 +3,4 @@
 - [ ] installateur claude code: fusion idempotente .claude/settings.json (SessionStart + Stop), --remove chirurgical + tests
 - [ ] installateur vibe: .vibe/hooks.toml post_agent idempotent + --remove ; cursor/generic refus proprement + tests
 - [ ] SKILL.md + READMEs: les hooks installemes, leur comportement
+- [ ] dogfood: installer dans ce depot, verifier l'arret bloque puis debloque par le check, commiter
