@@ -1,2 +1,3 @@
 - [ ] etendre config.rs: table tools de VerifyTool { path, command } + tests du schema
 - [ ] CLI: tod verify [cible] — nom d'outil ou defaut, exit code propage
+- [ ] tod verify <id>: fichiers modifies de la branche -> reunion des outils couvrant, sinon defaut
