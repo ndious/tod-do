@@ -1,2 +1,3 @@
 - [ ] tod hooks context: etat compact de la branche (taches, prochaine etape, rappel brief) + tests
 - [ ] tod hooks reminder: stdin hook_event_name -> protocole Stop (exit 2 + stop_hook_active) ou post_agent (JSON deny) + tests
+- [ ] installateur claude code: fusion idempotente .claude/settings.json (SessionStart + Stop), --remove chirurgical + tests
