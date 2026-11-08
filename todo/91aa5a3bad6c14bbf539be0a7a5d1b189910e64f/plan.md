@@ -1,0 +1,1 @@
+- [ ] tod hooks context: etat compact de la branche (taches, prochaine etape, rappel brief) + tests
