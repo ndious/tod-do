@@ -2,5 +2,5 @@
 - [x] tod hooks reminder: stdin hook_event_name -> protocole Stop (exit 2 + stop_hook_active) ou post_agent (JSON deny) + tests
 - [x] installateur claude code: fusion idempotente .claude/settings.json (SessionStart + Stop), --remove chirurgical + tests
 - [x] installateur vibe: .vibe/hooks.toml post_agent idempotent + --remove ; cursor/generic refus proprement + tests
-- [ ] SKILL.md + READMEs: les hooks installemes, leur comportement
+- [x] SKILL.md + READMEs: les hooks installemes, leur comportement
 - [ ] dogfood: installer dans ce depot, verifier l'arret bloque puis debloque par le check, commiter
