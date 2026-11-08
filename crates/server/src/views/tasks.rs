@@ -52,7 +52,10 @@ pub fn task_view(
     let steps: Vec<StepView> = plan
         .steps
         .iter()
-        .map(|s| StepView { done: s.done, text: s.text.clone() })
+        .map(|s| StepView {
+            done: s.done,
+            text: s.text.clone(),
+        })
         .collect();
     let done_count = steps.iter().filter(|s| s.done).count();
     TaskView {

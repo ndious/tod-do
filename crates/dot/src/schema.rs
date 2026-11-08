@@ -7,7 +7,7 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 
-use crate::types::{FieldType, parse_bool, parse_datetime, stringify_bool, stringify_datetime};
+use crate::types::{parse_bool, parse_datetime, stringify_bool, stringify_datetime, FieldType};
 
 /// A parsed field value.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +55,13 @@ impl Document {
 pub fn parse_key(key: &str) -> String {
     key.split(' ')
         .enumerate()
-        .map(|(i, word)| if i == 0 { word.to_lowercase() } else { word.to_string() })
+        .map(|(i, word)| {
+            if i == 0 {
+                word.to_lowercase()
+            } else {
+                word.to_string()
+            }
+        })
         .collect()
 }
 
@@ -116,7 +122,10 @@ fn parse_raw(content: &str) -> Vec<(String, RawValue)> {
             continue;
         }
         if let Some((key, value)) = line.split_once(':') {
-            entries.push((parse_key(key.trim()), RawValue::Line(value.trim().to_string())));
+            entries.push((
+                parse_key(key.trim()),
+                RawValue::Line(value.trim().to_string()),
+            ));
         }
     }
     entries
@@ -164,11 +173,7 @@ impl Schema {
     /// Render a document back to the dot file format: schema fields
     /// first (in declaration order), then any extra keys.
     pub fn stringify(&self, doc: &Document) -> String {
-        let mut keys: Vec<String> = self
-            .fields
-            .iter()
-            .map(|(k, _)| k.to_string())
-            .collect();
+        let mut keys: Vec<String> = self.fields.iter().map(|(k, _)| k.to_string()).collect();
         for (key, _) in doc.entries() {
             if !keys.contains(key) {
                 keys.push(key.clone());
@@ -222,7 +227,10 @@ mod tests {
     fn stringify_key_converts_back() {
         assert_eq!(stringify_key("testLongString"), "Test Long String");
         assert_eq!(stringify_key("test"), "Test");
-        assert_eq!(parse_key(&stringify_key("testLongString")), "testLongString");
+        assert_eq!(
+            parse_key(&stringify_key("testLongString")),
+            "testLongString"
+        );
     }
 
     #[test]
@@ -232,7 +240,10 @@ mod tests {
                 "Description: hello world\nDone: 1\nCreated: 2026-10-06 18:12:44 +0000\nExtra: kept as text\n",
             )
             .unwrap();
-        assert_eq!(doc.get("description"), Some(&Field::Text("hello world".into())));
+        assert_eq!(
+            doc.get("description"),
+            Some(&Field::Text("hello world".into()))
+        );
         assert_eq!(doc.get("done"), Some(&Field::Bool(true)));
         assert!(matches!(doc.get("created"), Some(Field::Datetime(_))));
         assert_eq!(doc.get("extra"), Some(&Field::Text("kept as text".into())));
@@ -244,7 +255,11 @@ mod tests {
         let doc = task_schema().parse(content).unwrap();
         assert_eq!(
             doc.get("description"),
-            Some(&Field::Block(vec!["first".into(), "second".into(), "third".into()]))
+            Some(&Field::Block(vec![
+                "first".into(),
+                "second".into(),
+                "third".into()
+            ]))
         );
         assert_eq!(doc.text("description").unwrap(), "first\nsecond\nthird");
     }
@@ -261,7 +276,10 @@ mod tests {
     #[test]
     fn stringify_renders_blocks_with_tabs() {
         let mut doc = Document::default();
-        doc.set("description", Field::Block(vec!["one".into(), "two".into()]));
+        doc.set(
+            "description",
+            Field::Block(vec!["one".into(), "two".into()]),
+        );
         let out = task_schema().stringify(&doc);
         assert!(out.contains("Description: \n\tone\n\ttwo\n"));
     }

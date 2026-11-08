@@ -16,11 +16,34 @@ main ──┬──────────────────────
 - `tod start <id>` — create the working branch from `main`
   (`t/<uid7>-<slug>`), move the task to `todo`.
 - `tod rfr <id>` — review state + **blocking push** of the branch
-  (the console diff reads origin).
+  to the sync remote (the console diff reads it).
 - `tod test <id>` — test state + merge into the `test` branch.
 - `tod finish` — rebase, ff-merge into main, tasks done, branch
   deleted, test branch rebased clean.
 - `tod x` / `tod state` / `tod rm` — done, any state, canceled.
+- `tod verify` — run the validation tests of the project (see
+  below); the command's exit code is tod's.
+
+## The project configuration: `.tod.toml`
+
+The per-repository settings, at the root — scaffolded by
+`tod init` when missing, never overwritten afterwards:
+
+```toml
+[sync]
+remote = "origin"       # the remote the 'tod' branch syncs with,
+                        # and where rfr/test push the branches
+[verify]
+command = "cargo test"  # run by `tod verify` at the root,
+                        # through the shell
+```
+
+Every key is optional: a missing file means the defaults
+(`origin`, no verification). A broken file or an unknown key
+fails the commands loudly instead of being silently ignored.
+When `[sync] remote` names anything but `origin`, the whole sync
+flow — pull before each command, push after each mutation,
+adoption after a clone — goes through that remote.
 
 ## Working on a task
 

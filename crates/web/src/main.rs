@@ -3,8 +3,8 @@
 
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -136,9 +136,7 @@ fn urlencode(s: &str) -> String {
 const TOKEN_KEY: &str = "tod-token";
 
 fn save_token(token: &str) {
-    if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok().flatten())
-    {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         let _ = storage.set_item(TOKEN_KEY, token);
     }
 }
@@ -151,9 +149,7 @@ fn stored_token() -> Option<String> {
 }
 
 fn clear_token() {
-    if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok().flatten())
-    {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         let _ = storage.remove_item(TOKEN_KEY);
     }
 }
@@ -245,7 +241,9 @@ async fn api_get<T: for<'de> Deserialize<'de>>(token: &str, path: &str) -> ApiOu
 }
 
 #[derive(Deserialize)]
-struct LoginResp { token: String }
+struct LoginResp {
+    token: String,
+}
 
 async fn api_login(u: String, p: String) -> Option<String> {
     let body = serde_json::json!({ "username": u, "password": p });
@@ -821,11 +819,13 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
         use_effect_with((), move |_| {
             let window = web_sys::window().expect("no window");
             let on_close = on_close.clone();
-            let on_key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
-                if e.key() == "Escape" {
-                    on_close.emit(());
-                }
-            });
+            let on_key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
+                move |e: web_sys::KeyboardEvent| {
+                    if e.key() == "Escape" {
+                        on_close.emit(());
+                    }
+                },
+            );
             window
                 .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
                 .expect("cannot listen to keydown");
@@ -910,10 +910,7 @@ pub fn task_detail(props: &TaskDetailProps) -> Html {
         let on_refresh = props.on_refresh.clone();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
-            let tags: Vec<String> = (*tag_input)
-                .split(',')
-                .map(str::to_string)
-                .collect();
+            let tags: Vec<String> = (*tag_input).split(',').map(str::to_string).collect();
             let (token, path, uid) = (token.clone(), path.clone(), uid.clone());
             let on_refresh = on_refresh.clone();
             spawn_local(async move {
@@ -1493,8 +1490,14 @@ pub fn app() -> Html {
                         .collect::<Html>();
 
                     // the view toggle
-                    let to_board = { let view = view.clone(); Callback::from(move |_| view.set(View::Board)) };
-                    let to_list = { let view = view.clone(); Callback::from(move |_| view.set(View::List)) };
+                    let to_board = {
+                        let view = view.clone();
+                        Callback::from(move |_| view.set(View::Board))
+                    };
+                    let to_list = {
+                        let view = view.clone();
+                        Callback::from(move |_| view.set(View::List))
+                    };
                     let (board_class, list_class) = match *view {
                         View::Board => ("btn btn-sm btn-primary", "btn btn-sm btn-ghost"),
                         View::List => ("btn btn-sm btn-ghost", "btn btn-sm btn-primary"),

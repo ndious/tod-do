@@ -3,9 +3,9 @@ use std::io::{IsTerminal, Write};
 
 use anyhow::{bail, Context, Result};
 
-use dot::spec;
 use dot::git;
 use dot::plan::Plan;
+use dot::spec;
 use dot::store::Store;
 use dot::task::Task;
 
@@ -17,7 +17,12 @@ pub fn init(skill: bool, no_skill: bool, agent: Option<String>) -> Result<()> {
         dot::store::TOD_BRANCH,
         store.tod_dir().display()
     );
-    println!("Your todos are versioned. Share them with: git push origin {}", dot::store::TOD_BRANCH);
+    let remote = store.remote()?;
+    println!(
+        "Your todos are versioned. Share them with: git push {remote} {}",
+        dot::store::TOD_BRANCH
+    );
+    scaffold_config(&store)?;
 
     // --agent <name>: install directly. --skill: install, asking
     // which agent when interactive, generic otherwise. --no-skill:
@@ -38,6 +43,53 @@ pub fn init(skill: bool, no_skill: bool, agent: Option<String>) -> Result<()> {
         install_skill(&store, agent)?;
     }
     Ok(())
+}
+
+/// Write the commented `.tod.toml` at the repository root when there
+/// is none: the per-project settings (sync remote, validation
+/// command) must stay one edit away.
+fn scaffold_config(store: &Store) -> Result<()> {
+    let path = store.root().join(dot::config::CONFIG_FILE);
+    if !path.exists() {
+        std::fs::write(&path, dot::config::SCAFFOLD)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+        println!(
+            "Created {} — the sync remote and the validation command, ready to edit",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Run the validation tests of the project: the `[verify] command`
+/// of `.tod.toml`, executed at the repository root through the
+/// shell. The exit code of the command is tod's exit code, so an
+/// agent, a hook or a CI can branch on the result.
+pub fn verify() -> Result<()> {
+    let store = Store::discover()?;
+    verify_in(&store)
+}
+
+fn verify_in(store: &Store) -> Result<()> {
+    let command = store.config()?.verify.command.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "no validation command configured — set [verify] command in {} at the root",
+            dot::config::CONFIG_FILE
+        )
+    })?;
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(store.root())
+        .status()
+        .with_context(|| format!("cannot run '{command}'"))?;
+    if status.success() {
+        println!("Verified: '{command}' passed");
+        Ok(())
+    } else {
+        println!("Failed: '{command}'");
+        std::process::exit(status.code().unwrap_or(1));
+    }
 }
 
 fn parse_agent(flag: &str) -> Result<crate::skill::Agent> {
@@ -160,7 +212,11 @@ pub fn check(identifier: &str, number: usize) -> Result<()> {
     store.commit("tod: update plan")?;
 
     let mark = if step.done { 'x' } else { ' ' };
-    println!("[{mark}] step {number} of #{}: {}", &task.uid[..5], step.text);
+    println!(
+        "[{mark}] step {number} of #{}: {}",
+        &task.uid[..5],
+        step.text
+    );
     Ok(())
 }
 
@@ -198,7 +254,10 @@ pub fn scenario(identifier: &str, edit: bool) -> Result<()> {
             .with_context(|| format!("cannot write {}", path.display()))?;
         store.commit(&format!("tod: scenario {}", &task.uid[..7]))?;
         if !edit {
-            println!("Created {} — fill the scenarios, or edit them with --edit", path.display());
+            println!(
+                "Created {} — fill the scenarios, or edit them with --edit",
+                path.display()
+            );
         }
     }
 
@@ -286,7 +345,10 @@ pub fn spec(identifier: &str, edit: bool) -> Result<()> {
             .with_context(|| format!("cannot write {}", path.display()))?;
         store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
         if !edit {
-            println!("Created {} — fill the prompt, or edit it with --edit", path.display());
+            println!(
+                "Created {} — fill the prompt, or edit it with --edit",
+                path.display()
+            );
         }
     }
 
@@ -363,7 +425,11 @@ pub fn tag(identifier: &str, tags: Vec<String>) -> Result<()> {
     let store = Store::discover()?;
     let task = store.set_tags(identifier, tags)?;
     if task.tags.is_empty() {
-        println!("Cleared the tags of #{} {}", &task.uid[..5], task.description);
+        println!(
+            "Cleared the tags of #{} {}",
+            &task.uid[..5],
+            task.description
+        );
     } else {
         println!(
             "Tagged #{} {}: {}",
@@ -386,10 +452,7 @@ pub fn done(identifier: &str) -> Result<()> {
 pub fn state(identifier: &str, target: &str) -> Result<()> {
     let store = Store::discover()?;
     let task = store.set_state(identifier, target)?;
-    println!(
-        "Moved #{} {} to {target}",
-        &task.uid[..5], task.description
-    );
+    println!("Moved #{} {} to {target}", &task.uid[..5], task.description);
     Ok(())
 }
 
@@ -410,7 +473,11 @@ pub fn mv(identifier: &str, to_backlog: bool) -> Result<()> {
     } else {
         format!("context '{}'", store.branch()?)
     };
-    println!("Moved #{} {} to {destination}", &task.uid[..5], task.description);
+    println!(
+        "Moved #{} {} to {destination}",
+        &task.uid[..5],
+        task.description
+    );
     Ok(())
 }
 
@@ -448,7 +515,8 @@ fn start_in(store: &Store, identifier: &str, branch: Option<String>, base: &str)
 
     println!(
         "Started #{} {} on branch '{branch}'",
-        &task.uid[..5], task.description
+        &task.uid[..5],
+        task.description
     );
     Ok(())
 }
@@ -486,9 +554,7 @@ fn finish_in(store: &Store, base: &str) -> Result<()> {
         git::checkout(root, base)?;
     }
 
-    println!(
-        "Finished '{branch}': merged into '{base}', {count} task(s) done, branch deleted"
-    );
+    println!("Finished '{branch}': merged into '{base}', {count} task(s) done, branch deleted");
     Ok(())
 }
 
@@ -504,7 +570,10 @@ fn test_in(store: &Store, identifier: &str) -> Result<()> {
     store.ensure_init()?;
     let (_, task) = store.find_task(identifier)?;
     let Some(branch) = task.branch.clone() else {
-        bail!("task #{} has no working branch (start it first)", &task.uid[..5]);
+        bail!(
+            "task #{} has no working branch (start it first)",
+            &task.uid[..5]
+        );
     };
     let root = store.root();
     let back_to = git::current_branch_in(root)?;
@@ -525,10 +594,11 @@ fn test_in(store: &Store, identifier: &str) -> Result<()> {
     store.set_state(identifier, "test")?;
 
     // push both, blocking: the testers may be elsewhere and the
-    // console diff reads origin
-    if store.has_origin() {
+    // console reads the sync remote
+    if store.has_remote() {
+        let remote = store.remote()?;
         for to_push in [git::TEST_BRANCH, branch.as_str()] {
-            if let Err(e) = git::push(root, "origin", to_push) {
+            if let Err(e) = git::push(root, &remote, to_push) {
                 println!(
                     "warning: {e} — push '{to_push}' manually for the testers and the console"
                 );
@@ -541,7 +611,7 @@ fn test_in(store: &Store, identifier: &str) -> Result<()> {
         &task.uid[..5],
         branch,
         git::TEST_BRANCH,
-        if store.has_origin() { " (pushed)" } else { "" }
+        if store.has_remote() { " (pushed)" } else { "" }
     );
     Ok(())
 }
@@ -556,19 +626,17 @@ pub fn rfr(identifier: &str) -> Result<()> {
     // work: blocking, because a silent failure would break the
     // review (rfr runs once per task, the latency is worth it)
     let branch = git::current_branch_in(store.root())?;
-    if branch != "main" && store.has_origin() {
-        match git::push(store.root(), "origin", &branch) {
-            Ok(()) => println!("Pushed '{branch}' to origin"),
+    if branch != "main" && store.has_remote() {
+        let remote = store.remote()?;
+        match git::push(store.root(), &remote, &branch) {
+            Ok(()) => println!("Pushed '{branch}' to {remote}"),
             Err(e) => println!(
                 "warning: {e} — the console cannot show the diff until '{branch}' is pushed"
             ),
         }
     }
 
-    println!(
-        "Ready for review #{} {}",
-        &task.uid[..5], task.description
-    );
+    println!("Ready for review #{} {}", &task.uid[..5], task.description);
     Ok(())
 }
 
@@ -600,8 +668,6 @@ pub fn export(output: &str) -> Result<()> {
     println!("Exported {tasks} task(s) across {states} states to {output}");
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -703,7 +769,14 @@ mod tests {
         finish_in(&store, "main").unwrap();
         assert_eq!(store.find_task(&task.uid).unwrap().0, "done");
         assert!(!git::branch_exists(dir.path(), &work_branch).unwrap());
-        let ahead = git(dir.path(), &["rev-list", "--count", &format!("main..{}", git::TEST_BRANCH)]);
+        let ahead = git(
+            dir.path(),
+            &[
+                "rev-list",
+                "--count",
+                &format!("main..{}", git::TEST_BRANCH),
+            ],
+        );
         assert_eq!(ahead, "0");
     }
 
@@ -714,12 +787,66 @@ mod tests {
         start_in(&store, &task.uid[..7], None, "main").unwrap();
         let taken = format!("t/{}-fix-the-login-bug", &task.uid[..7]);
 
-        let task2 = store.add_in(true, "Fix the login bug again", "tester").unwrap();
+        let task2 = store
+            .add_in(true, "Fix the login bug again", "tester")
+            .unwrap();
         // the generated name is free, but an existing name must fail
         assert!(start_in(&store, &task2.uid[..7], Some(taken.clone()), "main").is_err());
         // nothing moved: the second task is still in the backlog
         assert_eq!(store.load_backlog().unwrap().len(), 1);
         assert_eq!(git::current_branch_in(dir.path()).unwrap(), taken);
+    }
+
+    #[test]
+    fn verify_runs_the_command_of_the_project_config() {
+        let (dir, _store) = git_repo();
+        std::fs::write(
+            dir.path().join(dot::config::CONFIG_FILE),
+            "[verify]\ncommand = \"touch verified.txt\"\n",
+        )
+        .unwrap();
+        verify_in(&Store::new(dir.path())).unwrap();
+        assert!(dir.path().join("verified.txt").is_file());
+    }
+
+    #[test]
+    fn verify_without_a_configured_command_explains_itself() {
+        let (dir, store) = git_repo();
+        let error = verify_in(&store).unwrap_err().to_string();
+        assert!(error.contains("[verify] command"), "{error}");
+        assert!(error.contains(dot::config::CONFIG_FILE), "{error}");
+        assert!(!dir.path().join(dot::config::CONFIG_FILE).exists());
+    }
+
+    #[test]
+    fn verify_on_a_broken_config_fails_loudly() {
+        let (dir, _store) = git_repo();
+        std::fs::write(
+            dir.path().join(dot::config::CONFIG_FILE),
+            "not [ valid toml",
+        )
+        .unwrap();
+        let error = verify_in(&Store::new(dir.path())).unwrap_err().to_string();
+        assert!(error.contains(dot::config::CONFIG_FILE), "{error}");
+        assert!(error.contains("cannot parse"), "{error}");
+    }
+
+    #[test]
+    fn the_config_is_scaffolded_once_and_never_overwritten() {
+        let (dir, store) = git_repo();
+        scaffold_config(&store).unwrap();
+        let path = dir.path().join(dot::config::CONFIG_FILE);
+        let scaffold = std::fs::read_to_string(&path).unwrap();
+        assert!(scaffold.contains("[sync]"));
+        assert!(scaffold.contains("[verify]"));
+
+        // an edited config is never overwritten
+        std::fs::write(&path, "[verify]\ncommand = \"x\"\n").unwrap();
+        scaffold_config(&store).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[verify]\ncommand = \"x\"\n"
+        );
     }
 }
 
@@ -727,7 +854,10 @@ mod tests {
 /// `eval "$(tod completions <shell>)"`.
 pub fn completions(shell: &str) -> Result<()> {
     let shell = shell.to_lowercase();
-    if !matches!(shell.as_str(), "bash" | "zsh" | "fish" | "powershell" | "elvish") {
+    if !matches!(
+        shell.as_str(),
+        "bash" | "zsh" | "fish" | "powershell" | "elvish"
+    ) {
         bail!("unknown shell '{shell}' (bash | zsh | fish | powershell | elvish)");
     }
     // the registration script is printed by the binary itself when

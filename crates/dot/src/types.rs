@@ -23,7 +23,11 @@ pub fn parse_bool(value: &str) -> bool {
 }
 
 pub fn stringify_bool(value: bool) -> &'static str {
-    if value { "1" } else { "0" }
+    if value {
+        "1"
+    } else {
+        "0"
+    }
 }
 
 pub fn parse_datetime(value: &str) -> Result<DateTime<Utc>> {

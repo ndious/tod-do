@@ -3,8 +3,8 @@
 use std::fs;
 use std::process::Command;
 
-use dot::spec::{read, scaffold, write_scaffold, SPEC_FILE};
 use dot::plan::{Plan, Step, PLAN_FILE};
+use dot::spec::{read, scaffold, write_scaffold, SPEC_FILE};
 use dot::store::Store;
 
 fn setup() -> (tempfile::TempDir, Store) {
@@ -24,10 +24,7 @@ fn setup() -> (tempfile::TempDir, Store) {
 fn task_plan_round_trip() {
     let (_dir, store) = setup();
     let task = store.add("complex task", "tester", true).unwrap();
-    let dir = store
-        .state_dir("backlog")
-        .unwrap()
-        .join(&task.uid);
+    let dir = store.state_dir("backlog").unwrap().join(&task.uid);
 
     let mut plan = Plan::load(&dir).unwrap();
     assert!(plan.is_empty());

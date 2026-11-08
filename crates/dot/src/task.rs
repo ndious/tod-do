@@ -97,7 +97,11 @@ impl Task {
             _ => created,
         };
         let branch = doc.text("branch").filter(|b| !b.trim().is_empty());
-        let tags = doc.text("tags").as_deref().map(parse_tags).unwrap_or_default();
+        let tags = doc
+            .text("tags")
+            .as_deref()
+            .map(parse_tags)
+            .unwrap_or_default();
         let content = doc.text("content");
 
         Ok(Task {
@@ -125,8 +129,7 @@ impl Task {
             doc.set("tags", Field::Text(stringify_tags(&self.tags)));
         }
         if let Some(content) = &self.content {
-            let lines: Vec<String> =
-                content.split('\n').map(|l| l.to_string()).collect();
+            let lines: Vec<String> = content.split('\n').map(|l| l.to_string()).collect();
             doc.set("content", Field::Block(lines));
         }
         doc

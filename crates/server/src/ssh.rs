@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use sea_orm::DatabaseConnection;
 use russh::keys::ssh_key;
 use russh::keys::{Algorithm, PrivateKey};
 use russh::server::{Auth, Config, Handler, Server as _};
+use sea_orm::DatabaseConnection;
 
 use crate::models::{repos, user_keys};
 
@@ -430,15 +430,31 @@ mod tests {
         // a first user seeds it: code plus the tod storage
         let seed = dir.path().join("seed");
         std::process::Command::new("git")
-            .args(["clone", origin.to_string_lossy().as_ref(), seed.to_string_lossy().as_ref()])
+            .args([
+                "clone",
+                origin.to_string_lossy().as_ref(),
+                seed.to_string_lossy().as_ref(),
+            ])
             .output()
             .unwrap();
         std::process::Command::new("git")
-            .args(["-C", seed.to_string_lossy().as_ref(), "config", "user.email", "t@t"])
+            .args([
+                "-C",
+                seed.to_string_lossy().as_ref(),
+                "config",
+                "user.email",
+                "t@t",
+            ])
             .output()
             .unwrap();
         std::process::Command::new("git")
-            .args(["-C", seed.to_string_lossy().as_ref(), "config", "user.name", "t"])
+            .args([
+                "-C",
+                seed.to_string_lossy().as_ref(),
+                "config",
+                "user.name",
+                "t",
+            ])
             .output()
             .unwrap();
         std::fs::write(seed.join("app.txt"), "code").unwrap();
@@ -488,7 +504,9 @@ mod tests {
         let keyfile = dir.path().join("id_ed25519");
         std::fs::write(
             &keyfile,
-            key.to_openssh(ssh_key::LineEnding::default()).unwrap().as_bytes(),
+            key.to_openssh(ssh_key::LineEnding::default())
+                .unwrap()
+                .as_bytes(),
         )
         .unwrap();
         #[cfg(unix)]

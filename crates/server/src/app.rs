@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use axum::Router as AxumRouter;
 use loco_rs::{
     app::{AppContext, Hooks, Initializer},
     bgworker::{BackgroundWorker, Queue},
@@ -10,7 +11,6 @@ use loco_rs::{
     task::Tasks,
     Result,
 };
-use axum::Router as AxumRouter;
 use migration::Migrator;
 use std::path::Path;
 
@@ -58,15 +58,11 @@ impl Hooks for App {
     /// Boot the embedded git-over-SSH server alongside the HTTP
     /// server. The port binds here so a busy port fails loudly.
     async fn after_routes(router: AxumRouter, ctx: &AppContext) -> Result<AxumRouter> {
-
         let settings = crate::settings::Settings::from_ctx(ctx)?;
         let listener = tokio::net::TcpListener::bind(("0.0.0.0", settings.ssh_port))
             .await
             .map_err(|e| {
-                loco_rs::Error::string(&format!(
-                    "cannot bind ssh port {}: {e}",
-                    settings.ssh_port
-                ))
+                loco_rs::Error::string(&format!("cannot bind ssh port {}: {e}", settings.ssh_port))
             })?;
         let port = listener.local_addr()?.port();
         let state = crate::ssh::SshState {
@@ -80,9 +76,7 @@ impl Hooks for App {
 
         // serve the built web console as the fallback of the router
         let static_dir = std::path::PathBuf::from(&settings.static_dir);
-        Ok(router.fallback_service(tower_http::services::ServeDir::new(
-            &static_dir,
-        )))
+        Ok(router.fallback_service(tower_http::services::ServeDir::new(&static_dir)))
     }
     async fn connect_workers(ctx: &AppContext, queue: &Queue) -> Result<()> {
         queue.register(DownloadWorker::build(ctx)).await?;

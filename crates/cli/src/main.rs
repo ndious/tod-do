@@ -15,9 +15,10 @@ fn task_id_candidates() -> Vec<CompletionCandidate> {
     let mut candidates = Vec::new();
     let mut push = |tasks: Vec<dot::task::Task>, context: &str| {
         for task in tasks {
-            candidates.push(CompletionCandidate::new(task.uid).help(Some(
-                format!("[{context}] {}", task.description).into(),
-            )));
+            candidates.push(
+                CompletionCandidate::new(task.uid)
+                    .help(Some(format!("[{context}] {}", task.description).into())),
+            );
         }
     };
     if let Ok(backlog) = store.load_backlog() {
@@ -175,6 +176,9 @@ enum Commands {
         /// The target state (backlog | todo | review | test | done | canceled)
         state: String,
     },
+    /// Run the validation tests of the project
+    /// ([verify] command of the .tod.toml configuration)
+    Verify,
     /// Cancel a task (it moves to the canceled state)
     Rm {
         /// Full or partial task identifier
@@ -233,25 +237,48 @@ fn main() -> Result<()> {
     CompleteEnv::with_factory(|| Cli::command().bin_name("tod")).complete();
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init { skill, no_skill, agent } => commands::init(skill, no_skill, agent),
+        Commands::Init {
+            skill,
+            no_skill,
+            agent,
+        } => commands::init(skill, no_skill, agent),
         Commands::Skill { remove, agent } => commands::skill(remove, agent),
-        Commands::Add { backlog, description } => commands::add(&description, backlog),
-        Commands::Plan { backlog, description } => commands::plan(&description, backlog),
+        Commands::Add {
+            backlog,
+            description,
+        } => commands::add(&description, backlog),
+        Commands::Plan {
+            backlog,
+            description,
+        } => commands::plan(&description, backlog),
         Commands::Sub { identifier, step } => commands::sub(&identifier, &step),
         Commands::Check { identifier, number } => commands::check(&identifier, number),
         Commands::Brief { identifier } => commands::brief(&identifier),
         Commands::Spec { identifier, edit } => commands::spec(&identifier, edit),
         Commands::Scenario { identifier, edit } => commands::scenario(&identifier, edit),
         Commands::Status => commands::status(),
-        Commands::Ls { backlog, all, all_contexts, tag } => commands::ls(backlog, all, all_contexts, tag),
+        Commands::Ls {
+            backlog,
+            all,
+            all_contexts,
+            tag,
+        } => commands::ls(backlog, all, all_contexts, tag),
         Commands::Tag { identifier, tags } => commands::tag(&identifier, tags),
         Commands::X { identifier } => commands::done(&identifier),
         Commands::Rfr { identifier } => commands::rfr(&identifier),
         Commands::Test { identifier } => commands::test(&identifier),
         Commands::State { identifier, state } => commands::state(&identifier, &state),
+        Commands::Verify => commands::verify(),
         Commands::Rm { identifier } => commands::rm(&identifier),
-        Commands::Mv { backlog, identifier } => commands::mv(&identifier, backlog),
-        Commands::Start { identifier, branch, base } => commands::start(&identifier, branch, base.as_deref()),
+        Commands::Mv {
+            backlog,
+            identifier,
+        } => commands::mv(&identifier, backlog),
+        Commands::Start {
+            identifier,
+            branch,
+            base,
+        } => commands::start(&identifier, branch, base.as_deref()),
         Commands::Finish { base } => commands::finish(&base),
         Commands::Ctx => commands::ctx(),
         Commands::Resolve { context } => commands::resolve(&context),

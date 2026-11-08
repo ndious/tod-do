@@ -1,0 +1,7 @@
+# .tod.toml — tod's own project configuration.
+[sync]
+# the code remote: the tod branch and the working branches sync with it
+remote = "origin"
+
+[verify]
+command = "cargo test"

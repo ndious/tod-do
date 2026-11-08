@@ -7,9 +7,9 @@ use crate::{
     views::repos::RepoView,
     views::tasks::{self as task_views, Status},
 };
-use loco_rs::prelude::*;
-use loco_rs::controller::extractor::auth::JWTWithUser;
 use axum::extract::Query;
+use loco_rs::controller::extractor::auth::JWTWithUser;
+use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -127,7 +127,9 @@ async fn add(
         return Err(Error::BadRequest("invalid repository name".into()));
     }
     if repos::find_by_name(&ctx.db, name).await.is_ok() {
-        return Err(Error::BadRequest("a repository with this name already exists".into()));
+        return Err(Error::BadRequest(
+            "a repository with this name already exists".into(),
+        ));
     }
     // An empty url creates the repository here (like GitHub's "new
     // repository"); a filled one mirrors an existing one.
@@ -212,7 +214,9 @@ async fn add_task(
 
     // the whole creation lands in one commit
     if !params.tags.is_empty() {
-        store.set_tags(&task.uid, params.tags.clone()).map_err(wrap)?;
+        store
+            .set_tags(&task.uid, params.tags.clone())
+            .map_err(wrap)?;
     }
     if let Some(spec) = params.spec.clone().filter(|s| !s.trim().is_empty()) {
         std::fs::write(dir.join(dot::spec::SPEC_FILE), spec)
@@ -224,7 +228,9 @@ async fn add_task(
     }
     // always: set_tags already committed, this sweeps the spec and
     // the scenario (and the creation itself when nothing else did)
-    store.commit(&format!("tod: create {}", &task.uid[..7])).map_err(wrap)?;
+    store
+        .commit(&format!("tod: create {}", &task.uid[..7]))
+        .map_err(wrap)?;
 
     let plan = dot::plan::Plan::load(&dir).map_err(wrap)?;
     format::json(task_views::task_view(&task, "backlog", &plan, &dir))

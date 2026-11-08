@@ -42,8 +42,8 @@ impl Plan {
         if !path.is_file() {
             return Ok(Plan::default());
         }
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("cannot read {}", path.display()))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
         let steps = content
             .lines()
             .map(str::trim)
@@ -66,8 +66,7 @@ impl Plan {
             out.push_str(&stringify_step(step));
             out.push('\n');
         }
-        fs::write(&path, out)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        fs::write(&path, out).with_context(|| format!("cannot write {}", path.display()))?;
         Ok(())
     }
 
@@ -96,11 +95,20 @@ impl Plan {
 
 fn parse_step(line: &str) -> Step {
     if let Some(text) = line.strip_prefix("- [x] ").or(line.strip_prefix("[x] ")) {
-        Step { done: true, text: text.to_string() }
+        Step {
+            done: true,
+            text: text.to_string(),
+        }
     } else if let Some(text) = line.strip_prefix("- [ ] ").or(line.strip_prefix("[ ] ")) {
-        Step { done: false, text: text.to_string() }
+        Step {
+            done: false,
+            text: text.to_string(),
+        }
     } else {
-        Step { done: false, text: line.to_string() }
+        Step {
+            done: false,
+            text: line.to_string(),
+        }
     }
 }
 

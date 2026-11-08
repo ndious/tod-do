@@ -81,8 +81,11 @@ pub fn create_orphan_branch(root: &Path, branch: &str) -> Result<()> {
     }
     let tree = String::from_utf8(empty_tree.stdout)?.trim().to_string();
     let commit = git(root, &["commit-tree", &tree, "-m", "tod: init"])?;
-    git(root, &["update-ref", &format!("refs/heads/{branch}"), &commit])
-        .with_context(|| format!("cannot create branch '{branch}'"))?;
+    git(
+        root,
+        &["update-ref", &format!("refs/heads/{branch}"), &commit],
+    )
+    .with_context(|| format!("cannot create branch '{branch}'"))?;
     Ok(())
 }
 
@@ -96,16 +99,8 @@ pub fn create_branch_from(root: &Path, branch: &str, from: &str) -> Result<()> {
 
 /// Check out 'branch' in the worktree at 'path', creating it.
 pub fn worktree_add(root: &Path, path: &Path, branch: &str) -> Result<()> {
-    git(
-        root,
-        &[
-            "worktree",
-            "add",
-            &path.to_string_lossy(),
-            branch,
-        ],
-    )
-    .with_context(|| format!("cannot check out branch '{branch}' in {}", path.display()))?;
+    git(root, &["worktree", "add", &path.to_string_lossy(), branch])
+        .with_context(|| format!("cannot check out branch '{branch}' in {}", path.display()))?;
     Ok(())
 }
 
@@ -135,7 +130,9 @@ pub fn checkout(root: &Path, branch: &str) -> Result<()> {
 /// rebase; the user resolves them and runs the command again.
 pub fn rebase(dir: &Path, base: &str) -> Result<()> {
     git(dir, &["rebase", base])
-        .with_context(|| format!("cannot rebase onto '{base}' (resolve the conflicts, then re-run)"))
+        .with_context(|| {
+            format!("cannot rebase onto '{base}' (resolve the conflicts, then re-run)")
+        })
         .map(|_| ())
 }
 
@@ -143,7 +140,9 @@ pub fn rebase(dir: &Path, base: &str) -> Result<()> {
 /// stop the merge: resolve them, commit, and run the command again.
 pub fn merge(dir: &Path, branch: &str) -> Result<()> {
     git(dir, &["merge", "--no-edit", branch])
-        .with_context(|| format!("cannot merge '{branch}' (resolve the conflicts, commit, and re-run)"))
+        .with_context(|| {
+            format!("cannot merge '{branch}' (resolve the conflicts, commit, and re-run)")
+        })
         .map(|_| ())
 }
 
@@ -253,10 +252,15 @@ pub fn fetch(dir: &Path, remote: &str) -> Result<()> {
 pub fn fetch_to_scratch(dir: &Path, remote: &str, branch: &str) -> Result<()> {
     git(
         dir,
-        &["fetch", "--quiet", remote, &format!("refs/heads/{branch}:refs/tod-sync")],
+        &[
+            "fetch",
+            "--quiet",
+            remote,
+            &format!("refs/heads/{branch}:refs/tod-sync"),
+        ],
     )
-        .map(|_| ())
-        .with_context(|| format!("cannot fetch '{branch}' from '{remote}'"))
+    .map(|_| ())
+    .with_context(|| format!("cannot fetch '{branch}' from '{remote}'"))
 }
 
 /// Fast-forward the branch checked out in 'dir' to 'from'.
@@ -405,7 +409,10 @@ mod tests {
             branch_slug("Créer une commande qui start une tache"),
             "creer-une-commande-qui-start"
         );
-        assert_eq!(branch_slug("Affichage à la trello"), "affichage-a-la-trello");
+        assert_eq!(
+            branch_slug("Affichage à la trello"),
+            "affichage-a-la-trello"
+        );
         assert_eq!(branch_slug("Fix the login bug!"), "fix-the-login-bug");
         assert_eq!(branch_slug("  spaces  &  symbols  "), "spaces-symbols");
         assert_eq!(branch_slug("###"), "");

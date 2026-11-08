@@ -151,15 +151,13 @@ scenarios are written content: fill them, never regenerate them.
 
 "#;
 
-
 /// Install (or overwrite) the skill for one agent.
 /// Returns the SKILL.md path.
 pub fn install(store: &Store, agent: Agent) -> Result<PathBuf> {
     let path = skill_path(store, agent);
     let dir = path.parent().expect("skill path has a parent");
     std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    std::fs::write(&path, SKILL_MD)
-        .with_context(|| format!("cannot write {}", path.display()))?;
+    std::fs::write(&path, SKILL_MD).with_context(|| format!("cannot write {}", path.display()))?;
     Ok(path)
 }
 
@@ -209,7 +207,9 @@ mod tests {
         let store = Store::new(dir.path());
         for agent in [Agent::Claude, Agent::Cursor, Agent::Vibe, Agent::Generic] {
             let path = install(&store, agent).unwrap();
-            assert!(path.to_string_lossy().starts_with(dir.path().to_string_lossy().as_ref()));
+            assert!(path
+                .to_string_lossy()
+                .starts_with(dir.path().to_string_lossy().as_ref()));
             assert!(path.ends_with("tod/SKILL.md"));
             assert!(path.to_string_lossy().contains(match agent {
                 Agent::Claude => ".claude",

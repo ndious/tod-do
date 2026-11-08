@@ -43,6 +43,33 @@ into tests of the project's own framework — they are the
 definition of done. The plan is the communication protocol between
 human and agent; the spec is the shared brain.
 
+## Project configuration (.tod.toml)
+
+The per-repository settings live in a `.tod.toml` at the root —
+scaffolded by `tod init` when missing, never overwritten after
+you edit it:
+
+```toml
+[sync]
+# The git remote the todos sync with: the 'tod' branch is pulled
+# from it before every command and pushed to it after each
+# mutation, and rfr/test push the working branches there too.
+remote = "origin"
+
+[verify]
+# The command running the validation tests, executed by
+# `tod verify` at the repository root, through the shell: its
+# exit code becomes the command's exit code.
+command = "cargo test"
+```
+
+Every key is optional — a missing file is a valid configuration
+with the defaults (`origin`, no verification), and a broken file
+or an unknown key fails the commands loudly instead of being
+silently ignored. `[sync] remote` lets a repository sync its
+todos with a remote that is not `origin`: the whole flow — pull,
+push, branch adoption after a clone — goes through it.
+
 ## Agent skill
 
 `tod init` can install a **skill** for your AI coding agent: a
@@ -226,7 +253,8 @@ into tests of the project's own framework. The **state** of a task
 is its directory; its **working branch** is a field of `task.tod`.
 
 Your todos are versioned **and synchronized**: when the repository
-has an `origin` remote, every command pulls the `tod` branch before
+has an `origin` remote (or whatever `[sync] remote` names), every
+command pulls the `tod` branch before
 running, and every mutating command pushes it after committing —
 work on any machine, the todos follow.
 
@@ -298,6 +326,7 @@ tod brief 919fe            # the spec of a task — its detailed prompt
 tod spec 919fe -e          # edit the prompt in $TOD_EDITOR / $EDITOR / vi
 tod scenario 919fe        # the Gherkin scenarios (scaffolded in French when missing)
 tod scenario 919fe -e      # ... or edit them in your editor
+tod verify                 # run the validation tests of the project (.tod.toml)
 tod status                 # project overview with progress
 tod ls / ls -b             # todos left to do (-a: also the done ones)
 tod ls -A                   # every state (same filters)
@@ -337,11 +366,11 @@ impossible — git forbids `refs/heads/tod/*` while the `tod` storage
 branch exists), linked to its task by the uid, with a pure-ASCII
 slug (accents transliterated, at most 30 characters, never cut
 mid-word). `rfr` moves the task to `review` and pushes its branch
-to origin (the web console shows the diff of pushed branches).
+to the sync remote (the web console shows the diff of pushed branches).
 `test` moves the task to the test state and merges its work into
 the **`test` branch** — parallel to `main`, accumulating every task
 to test — so the tester checks out one branch and tries everything;
-it is pushed to origin too. `finish` rebases the branch on the
+it is pushed to the sync remote too. `finish` rebases the branch on the
 base, merges it fast-forward only, moves its tasks to `done`,
 deletes the merged branch, and rebases the `test` branch on the
 base: the commits main just received drop out of it. `x` closes a

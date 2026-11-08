@@ -14,6 +14,7 @@ its planning tools.
 | `types` | the field types: `Text`, `Bool` (0/1), `Iso8601` |
 | `task` | `Task` + its dot schema (`task.tod`), tag normalization |
 | `store` | the git-native store: states, sync, mutations |
+| `config` | `.tod.toml`: the per-project settings (sync remote, verification command) |
 | `git` | the git helpers: worktrees, branches, rebase, push, retrying background push |
 | `plan` | `plan.md`: the micro-todo checklist of a task |
 | `spec` | `spec.md`: the authored detailed prompt (scaffold + read) |
@@ -43,14 +44,20 @@ directory also holds `plan.md` (a markdown checklist), `spec.md`
 
 ## Synchronization
 
-`Store::sync_pull` runs before any command: fetch origin,
-fast-forward the tod branch, and — for a mirror (the server) —
-fast-forward from `FETCH_HEAD` and resync the worktree. The push
-runs at the end of each command, in the background by default,
-with a retrying child (`git::spawn_push`); `commit` marks the
-store dirty and `Drop` flushes once per command. Environment:
+`Store::sync_pull` runs before any command: fetch the sync
+remote, fast-forward the tod branch, and — for a mirror (the
+server) — fast-forward from `FETCH_HEAD` and resync the worktree.
+The remote is `Store::remote()`: the `[sync] remote` of the
+project's `.tod.toml` (`config::Config::load`), `origin` by
+default — a repository configured with a custom remote syncs,
+pushes and adopts the branch through it. The push runs at the
+end of each command, in the background by default, with a
+retrying child (`git::spawn_push`); `commit` marks the store
+dirty and `Drop` flushes once per command. Environment:
 `TOD_SYNC_TTL` (pull rate limit), `TOD_SYNC_PUSH=sync`,
-`TOD_NO_SYNC=1`.
+`TOD_NO_SYNC=1`. A broken `.tod.toml` fails `Store::config()`
+— and thus every command through `ensure_init` — instead of
+being silently ignored.
 
 ## Key entry points
 

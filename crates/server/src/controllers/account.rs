@@ -20,10 +20,7 @@ pub struct PasswordParams {
 
 /// The account of the logged-in user.
 #[debug_handler]
-async fn show(
-    auth: JWTWithUser<users::Model>,
-    State(_ctx): State<AppContext>,
-) -> Result<Response> {
+async fn show(auth: JWTWithUser<users::Model>, State(_ctx): State<AppContext>) -> Result<Response> {
     format::json(AccountView {
         email: auth.user.email,
         name: auth.user.name,

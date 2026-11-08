@@ -2,8 +2,8 @@
 //! the git clients.
 
 use crate::models::{user_keys, users};
-use loco_rs::prelude::*;
 use loco_rs::controller::extractor::auth::JWTWithUser;
+use loco_rs::prelude::*;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -34,10 +34,7 @@ async fn add(
 
 /// List the keys of the logged-in user.
 #[debug_handler]
-async fn list(
-    auth: JWTWithUser<users::Model>,
-    State(ctx): State<AppContext>,
-) -> Result<Response> {
+async fn list(auth: JWTWithUser<users::Model>, State(ctx): State<AppContext>) -> Result<Response> {
     let keys = user_keys::list(&ctx.db, auth.user.id).await?;
     format::json(keys)
 }

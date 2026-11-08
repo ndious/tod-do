@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use sha1::{Digest, Sha1};
 
+use crate::config;
 use crate::git;
 use crate::task::Task;
 
@@ -30,8 +31,8 @@ pub struct Store {
     root: PathBuf,
     /// The persistent worktree where the tod branch is checked out.
     tod_dir: PathBuf,
-    /// Whether the tod branch was already pulled from origin in this
-    /// Store instance: one command = one Store = one pull.
+    /// Whether the tod branch was already pulled from the sync remote
+    /// in this Store instance: one command = one Store = one pull.
     pulled: Cell<bool>,
     /// Whether commits happened that still need a push, flushed once
     /// when the Store (the command) is dropped.
@@ -40,8 +41,15 @@ pub struct Store {
     /// returns instantly) or blocks. Background by default from
     /// `Store::discover` (the CLI), blocking from `Store::new`.
     async_push: Cell<bool>,
-    /// Cached "does an origin remote exist", looked up once per Store.
-    has_origin: Cell<Option<bool>>,
+    /// The project configuration (`.tod.toml` at the root), read
+    /// once per Store. None means the file could not be parsed: the
+    /// error is in `config_error`.
+    config: Option<config::Config>,
+    /// Why `.tod.toml` could not be parsed, surfaced by `config()`
+    /// when a command needs its settings.
+    config_error: Option<String>,
+    /// Cached "does the sync remote exist", looked up once per Store.
+    remote_present: Cell<Option<bool>>,
 }
 
 impl Store {
@@ -67,13 +75,21 @@ impl Store {
         let tod_dir = git::common_dir(&root)
             .map(|d| d.join(WORKTREE_DIR))
             .unwrap_or_else(|_| root.join(".git").join(WORKTREE_DIR));
+        // The per-project configuration is read eagerly, so config
+        // errors cannot be swallowed: they surface from `config()`.
+        let (config, config_error) = match config::Config::load(&root) {
+            Ok(c) => (Some(c), None),
+            Err(e) => (None, Some(format!("{e:#}"))),
+        };
         Store {
             root,
             tod_dir,
             pulled: Cell::new(false),
             dirty: Cell::new(false),
             async_push: Cell::new(false),
-            has_origin: Cell::new(None),
+            config,
+            config_error,
+            remote_present: Cell::new(None),
         }
     }
 
@@ -92,6 +108,23 @@ impl Store {
     /// The persistent worktree of the tod branch.
     pub fn tod_dir(&self) -> &Path {
         &self.tod_dir
+    }
+
+    /// The project configuration of the repository (`.tod.toml` at
+    /// the root, defaults when missing). A broken file is an error:
+    /// a typo in the config must stop the command instead of
+    /// silently behaving as if the key were absent.
+    pub fn config(&self) -> Result<&config::Config> {
+        if let Some(error) = &self.config_error {
+            bail!("{error}");
+        }
+        Ok(self.config.as_ref().expect("config set when no error"))
+    }
+
+    /// The remote the todos sync with: `[sync] remote` of the
+    /// project configuration, `origin` by default.
+    pub fn remote(&self) -> Result<String> {
+        Ok(self.config()?.remote().to_string())
     }
 
     /// The directory holding the tasks of one state: one
@@ -122,7 +155,7 @@ impl Store {
     }
 
     /// Has 'tod init' been run in this repository (or is the tod
-    /// branch available, locally or on the origin remote)?
+    /// branch available, locally or on the sync remote)?
     pub fn is_initialized(&self) -> bool {
         self.branch_available().unwrap_or(false)
     }
@@ -133,17 +166,20 @@ impl Store {
         if git::branch_exists(&self.root, TOD_BRANCH)? {
             return Ok(true);
         }
-        git::ref_exists(&self.root, &format!("refs/remotes/origin/{TOD_BRANCH}"))
+        let remote = self.remote()?;
+        git::ref_exists(&self.root, &format!("refs/remotes/{remote}/{TOD_BRANCH}"))
     }
 
     /// Adopt the tod branch after a clone: create the local branch
-    /// from its origin counterpart.
+    /// from its remote counterpart.
     fn ensure_branch(&self) -> Result<()> {
         if git::branch_exists(&self.root, TOD_BRANCH)? {
             return Ok(());
         }
-        if git::ref_exists(&self.root, &format!("refs/remotes/origin/{TOD_BRANCH}"))? {
-            git::create_branch_from(&self.root, TOD_BRANCH, &format!("origin/{TOD_BRANCH}"))?;
+        let remote = self.remote()?;
+        let remote_ref = format!("{remote}/{TOD_BRANCH}");
+        if git::ref_exists(&self.root, &format!("refs/remotes/{remote_ref}"))? {
+            git::create_branch_from(&self.root, TOD_BRANCH, &remote_ref)?;
             return Ok(());
         }
         bail!("tod is not initialized here. Run 'tod init' first.");
@@ -156,10 +192,13 @@ impl Store {
     }
 
     /// Make sure the tod branch is checked out in the persistent
-    /// worktree, and up to date with origin. Safe to call before
-    /// every operation; the pull only runs once per Store instance
-    /// (one command = one Store).
+    /// worktree, and up to date with the sync remote. Safe to call
+    /// before every operation; the pull only runs once per Store
+    /// instance (one command = one Store).
     pub fn ensure_init(&self) -> Result<()> {
+        // a broken .tod.toml fails here: no command may half-sync
+        // while silently ignoring the project configuration
+        self.config()?;
         self.ensure_branch()?;
         if !self.worktree_ready() {
             git::worktree_prune(&self.root)?;
@@ -172,8 +211,10 @@ impl Store {
     /// Create the tod branch and its persistent worktree. Idempotent.
     pub fn init(&self) -> Result<()> {
         if !git::branch_exists(&self.root, TOD_BRANCH)? {
-            if git::ref_exists(&self.root, &format!("refs/remotes/origin/{TOD_BRANCH}"))? {
-                git::create_branch_from(&self.root, TOD_BRANCH, &format!("origin/{TOD_BRANCH}"))?;
+            let remote = self.remote()?;
+            let remote_ref = format!("refs/remotes/{remote}/{TOD_BRANCH}");
+            if git::ref_exists(&self.root, &remote_ref)? {
+                git::create_branch_from(&self.root, TOD_BRANCH, &format!("{remote}/{TOD_BRANCH}"))?;
             } else {
                 git::create_orphan_branch(&self.root, TOD_BRANCH)?;
             }
@@ -186,9 +227,10 @@ impl Store {
     }
 
     /// Commit the pending changes of the tod worktree. No-op when
-    /// nothing changed. The push to origin is deferred to the end of
-    /// the command (see `Drop for Store`), so a command making
-    /// several commits still performs a single network round trip.
+    /// nothing changed. The push to the sync remote is deferred to
+    /// the end of the command (see `Drop for Store`), so a command
+    /// making several commits still performs a single network round
+    /// trip.
     /// Public: the CLI writes plan.md and spec.md directly and
     /// commits them through the store.
     pub fn commit(&self, message: &str) -> Result<()> {
@@ -198,17 +240,20 @@ impl Store {
         Ok(())
     }
 
-    /// Does the repository have an origin remote to sync with?
-    /// Looked up once per Store instance; also used by the CLI to
-    /// decide whether a branch is worth pushing.
-    pub fn has_origin(&self) -> bool {
-        if let Some(known) = self.has_origin.get() {
+    /// Does the repository have the configured sync remote? Looked
+    /// up once per Store instance; also used by the CLI to decide
+    /// whether a branch is worth pushing.
+    pub fn has_remote(&self) -> bool {
+        if let Some(known) = self.remote_present.get() {
             return known;
         }
-        let known = git::remotes(&self.tod_dir)
-            .map(|r| r.iter().any(|r| r == "origin"))
-            .unwrap_or(false);
-        self.has_origin.set(Some(known));
+        let known = match &self.config {
+            Some(config) => git::remotes(&self.tod_dir)
+                .map(|r| r.iter().any(|r| r == config.remote()))
+                .unwrap_or(false),
+            None => false,
+        };
+        self.remote_present.set(Some(known));
         known
     }
 
@@ -219,8 +264,8 @@ impl Store {
         self.tod_dir.parent().map(|p| p.join("tod-last-pull"))
     }
 
-    /// Was the tod branch pulled from origin within the last 'ttl'
-    /// seconds?
+    /// Was the tod branch pulled from the sync remote within the
+    /// last 'ttl' seconds?
     fn pulled_recently(&self, ttl: u64) -> bool {
         let Some(marker) = self.pull_marker() else {
             return false;
@@ -263,19 +308,20 @@ impl Store {
         }
     }
 
-    /// Fetch origin and fast-forward the tod branch before a command
-    /// reads or writes it, so every machine works on the latest
-    /// todos. The fetch is skipped when the last one is fresher than
-    /// the TOD_SYNC_TTL (default 30s; 0 = always pull), so repeated
-    /// commands stay instant. An unreachable remote is a warning
-    /// (offline work); a divergence between the local and the remote
-    /// branch is a hard error.
+    /// Fetch the sync remote and fast-forward the tod branch before
+    /// a command reads or writes it, so every machine works on the
+    /// latest todos. The remote is the project configuration's
+    /// `[sync] remote` (default `origin`). The fetch is skipped when
+    /// the last one is fresher than the TOD_SYNC_TTL (default 30s;
+    /// 0 = always pull), so repeated commands stay instant. An
+    /// unreachable remote is a warning (offline work); a divergence
+    /// between the local and the remote branch is a hard error.
     fn sync_pull(&self) -> Result<()> {
         if self.pulled.get() {
             return Ok(());
         }
         self.pulled.set(true);
-        if !self.has_origin() || std::env::var_os("TOD_NO_SYNC").is_some() {
+        if !self.has_remote() || std::env::var_os("TOD_NO_SYNC").is_some() {
             return Ok(());
         }
         let ttl = std::env::var("TOD_SYNC_TTL")
@@ -285,15 +331,18 @@ impl Store {
         if ttl > 0 && self.pulled_recently(ttl) {
             return Ok(());
         }
-        if git::fetch(&self.tod_dir, "origin").is_err() {
-            eprintln!("warning: cannot reach origin, working on the local '{TOD_BRANCH}' branch");
+        let remote = self.remote()?;
+        if git::fetch(&self.tod_dir, &remote).is_err() {
+            eprintln!(
+                "warning: cannot reach '{remote}', working on the local '{TOD_BRANCH}' branch"
+            );
             return Ok(());
         }
-        let origin_ref = format!("origin/{TOD_BRANCH}");
-        if git::ref_exists(&self.tod_dir, &format!("refs/remotes/{origin_ref}"))? {
-            git::merge_ff_only(&self.tod_dir, &origin_ref).with_context(|| {
+        let remote_ref = format!("{remote}/{TOD_BRANCH}");
+        if git::ref_exists(&self.tod_dir, &format!("refs/remotes/{remote_ref}"))? {
+            git::merge_ff_only(&self.tod_dir, &remote_ref).with_context(|| {
                 format!(
-                    "the '{TOD_BRANCH}' branch diverged from {origin_ref}; resolve it manually in {}",
+                    "the '{TOD_BRANCH}' branch diverged from {remote_ref}; resolve it manually in {}",
                     self.tod_dir.display()
                 )
             })?;
@@ -301,16 +350,16 @@ impl Store {
             // flush: when a burst of commands races, the pushes are
             // still on their way — only complain when none was
             // started recently
-            if git::ahead_of(&self.tod_dir, &origin_ref, TOD_BRANCH)? > 0
+            if git::ahead_of(&self.tod_dir, &remote_ref, TOD_BRANCH)? > 0
                 && !self.pushed_recently(60)
             {
                 eprintln!(
                     "warning: the '{TOD_BRANCH}' branch has unpushed commits, retrying the push in the background"
                 );
-                let _ = git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH);
+                let _ = git::spawn_push(&self.tod_dir, &remote, TOD_BRANCH);
                 self.mark_push();
             }
-        } else if git::fetch_to_scratch(&self.tod_dir, "origin", TOD_BRANCH).is_ok() {
+        } else if git::fetch_to_scratch(&self.tod_dir, &remote, TOD_BRANCH).is_ok() {
             // a mirror (the server) has no remote-tracking refs and
             // its 'tod' branch is checked out in the worktree: the
             // fetch landed in the scratch ref, and the fast-forward
@@ -330,7 +379,12 @@ impl Store {
     pub fn add(&self, description: &str, author: &str, backlog: bool) -> Result<Task> {
         self.ensure_init()?;
         let branch = if backlog { None } else { Some(self.branch()?) };
-        let task = self.create(description, author, branch, if backlog { "backlog" } else { "todo" })?;
+        let task = self.create(
+            description,
+            author,
+            branch,
+            if backlog { "backlog" } else { "todo" },
+        )?;
         Ok(task)
     }
 
@@ -339,7 +393,12 @@ impl Store {
     pub fn add_in(&self, backlog: bool, description: &str, author: &str) -> Result<Task> {
         self.ensure_init()?;
         let branch = if backlog { None } else { Some(self.branch()?) };
-        self.create(description, author, branch, if backlog { "backlog" } else { "todo" })
+        self.create(
+            description,
+            author,
+            branch,
+            if backlog { "backlog" } else { "todo" },
+        )
     }
 
     /// Create a task directory of the given state, with its task.tod.
@@ -500,11 +559,7 @@ impl Store {
 
     /// Find a task anywhere and apply a change to its task.tod,
     /// writing it back where it lives.
-    fn mark(
-        &self,
-        identifier: &str,
-        change: impl FnOnce(&mut Task) -> Result<()>,
-    ) -> Result<Task> {
+    fn mark(&self, identifier: &str, change: impl FnOnce(&mut Task) -> Result<()>) -> Result<Task> {
         let (state, task) = self.find_task(identifier)?;
         let dir = self.state_dir(&state)?.join(&task.uid);
         let mut task = task;
@@ -574,33 +629,37 @@ impl Store {
         let db = serde_json::json!({ "states": map });
         fs::write(output, serde_json::to_string_pretty(&db)?)
             .with_context(|| format!("cannot write {output}"))?;
-        Ok((
-            states.iter().map(|(_, t)| t.len()).sum(),
-            states.len(),
-        ))
+        Ok((states.iter().map(|(_, t)| t.len()).sum(), states.len()))
     }
 }
 
 impl Drop for Store {
     /// Flush the tod branch once per command, at the very end, and
-    /// only when something was actually committed. By default from
-    /// the CLI the push runs in the background: the command returns
-    /// instantly, a failed push is detected and retried by the next
-    /// command. A blocking push failure (offline, no permission) is
-    /// a warning: the commits are already local.
+    /// only when something was actually committed, to the remote of
+    /// the project configuration. By default from the CLI the push
+    /// runs in the background: the command returns instantly, a
+    /// failed push is detected and retried by the next command. A
+    /// blocking push failure (offline, no permission) is a warning:
+    /// the commits are already local.
     /// TOD_NO_SYNC=1 disables the push entirely.
     fn drop(&mut self) {
         if !self.dirty.get() || std::env::var_os("TOD_NO_SYNC").is_some() {
             return;
         }
-        if !self.has_origin() {
+        // a broken config was reported by the command itself; Drop
+        // never panics
+        let Some(config) = &self.config else {
+            return;
+        };
+        if !self.has_remote() {
             return;
         }
+        let remote = config.remote();
         let push = if self.async_push.get() {
             self.mark_push();
-            git::spawn_push(&self.tod_dir, "origin", TOD_BRANCH)
+            git::spawn_push(&self.tod_dir, remote, TOD_BRANCH)
         } else {
-            git::push(&self.tod_dir, "origin", TOD_BRANCH)
+            git::push(&self.tod_dir, remote, TOD_BRANCH)
         };
         if let Err(e) = push {
             eprintln!("warning: {e}");
@@ -635,7 +694,11 @@ fn new_uid(description: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(description.as_bytes());
     hasher.update(now.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -646,7 +709,11 @@ mod tests {
     /// A temp directory with a real git repository and a store on it.
     fn git_repo() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
-        let out = Command::new("git").arg("init").current_dir(dir.path()).output().unwrap();
+        let out = Command::new("git")
+            .arg("init")
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
         assert!(out.status.success(), "git init failed");
         let store = Store::new(dir.path());
         (dir, store)
@@ -747,7 +814,11 @@ mod tests {
         // one directory per task, named by its uid, holding task.tod
         let task_dir = store.state_dir("todo").unwrap().join(&in_todo.uid);
         assert!(task_dir.join(crate::task::TASK_FILE).is_file());
-        assert!(store.state_dir("backlog").unwrap().join(&in_backlog.uid).is_dir());
+        assert!(store
+            .state_dir("backlog")
+            .unwrap()
+            .join(&in_backlog.uid)
+            .is_dir());
         assert_eq!(store.load_context("main").unwrap().len(), 1);
         assert_eq!(store.load_backlog().unwrap().len(), 1);
 
@@ -811,7 +882,9 @@ mod tests {
         let other = store.add_in(true, "from context", "tester").unwrap();
 
         // backlog -> working branch
-        store.start_task(&backlog_task.uid[..7], "fix-login").unwrap();
+        store
+            .start_task(&backlog_task.uid[..7], "fix-login")
+            .unwrap();
         assert_eq!(store.load_backlog().unwrap().len(), 1); // 'other' stays
         assert_eq!(store.load_context("fix-login").unwrap().len(), 1);
         assert_eq!(store.find_task(&backlog_task.uid).unwrap().0, "todo");
@@ -838,7 +911,11 @@ mod tests {
 
         let clone_dir = tempfile::tempdir().unwrap();
         let out = Command::new("git")
-            .args(["clone", origin.path().to_string_lossy().as_ref(), clone_dir.path().to_string_lossy().as_ref()])
+            .args([
+                "clone",
+                origin.path().to_string_lossy().as_ref(),
+                clone_dir.path().to_string_lossy().as_ref(),
+            ])
             .output()
             .unwrap();
         assert!(out.status.success(), "git clone failed");
@@ -881,7 +958,11 @@ mod tests {
         // machine B is a fresh clone: it pulls A's task on its first command
         let dir_b = tempfile::tempdir().unwrap();
         let out = Command::new("git")
-            .args(["clone", server.to_string_lossy().as_ref(), dir_b.path().to_string_lossy().as_ref()])
+            .args([
+                "clone",
+                server.to_string_lossy().as_ref(),
+                dir_b.path().to_string_lossy().as_ref(),
+            ])
             .output()
             .unwrap();
         assert!(out.status.success(), "git clone failed");
@@ -893,9 +974,7 @@ mod tests {
 
         // machine A's next command pulls B's task once the freshness
         // marker is stale (simulate the TTL elapsing: remove it)
-        let _ = std::fs::remove_file(
-            git::common_dir(dir_a.path()).unwrap().join("tod-last-pull"),
-        );
+        let _ = std::fs::remove_file(git::common_dir(dir_a.path()).unwrap().join("tod-last-pull"));
         let store_a2 = Store::new(dir_a.path());
         assert_eq!(store_a2.load_backlog().unwrap().len(), 2);
     }
@@ -1002,7 +1081,9 @@ mod tests {
             store.add_in(true, "pushed later", "tester").unwrap();
         }
         // the command is over: the background push lands on its own
-        assert!(eventually(|| git::ref_exists(&server, "refs/heads/tod").unwrap()));
+        assert!(eventually(
+            || git::ref_exists(&server, "refs/heads/tod").unwrap()
+        ));
         let commits = git(&server, &["rev-list", "--count", "tod"]);
         assert_eq!(commits, "2"); // tod: init + the addition
     }
@@ -1052,16 +1133,11 @@ mod tests {
                 "stray commit",
             ],
         );
-        assert_eq!(
-            git::ahead_of(&worktree, "origin/tod", "tod").unwrap(),
-            1
-        );
+        assert_eq!(git::ahead_of(&worktree, "origin/tod", "tod").unwrap(), 1);
 
         // the next command fetches (marker stale), sees the local
         // branch ahead of origin, and starts a push in the background
-        let _ = std::fs::remove_file(
-            git::common_dir(dir.path()).unwrap().join("tod-last-pull"),
-        );
+        let _ = std::fs::remove_file(git::common_dir(dir.path()).unwrap().join("tod-last-pull"));
         let store = Store::new(dir.path());
         store.load_backlog().unwrap();
         assert!(eventually(|| {
@@ -1115,5 +1191,80 @@ mod tests {
         store.init().unwrap();
         store.add_in(true, "offline task", "tester").unwrap();
         assert_eq!(store.load_backlog().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sync_flows_through_the_remote_of_the_project_config() {
+        // a bare repository plays the role of the shared server —
+        // configured under a name other than 'origin'
+        let bare = tempfile::tempdir().unwrap();
+        let server = bare.path().join("server.git");
+        let out = Command::new("git")
+            .args(["init", "--bare", server.to_string_lossy().as_ref()])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git init --bare failed");
+
+        let (dir, _store) = git_repo();
+        let out = Command::new("git")
+            .args([
+                "remote",
+                "add",
+                "todserver",
+                server.to_string_lossy().as_ref(),
+            ])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git remote add failed");
+        let config = "[sync]\nremote = \"todserver\"\n";
+        std::fs::write(dir.path().join(crate::config::CONFIG_FILE), config).unwrap();
+
+        // push at the end of the command, and the clone adoption:
+        // both follow the configured remote
+        {
+            let store = Store::new(dir.path());
+            store.init().unwrap();
+            // remotes live in the shared config: the worktree of
+            // the tod branch sees 'todserver' as well
+            assert!(store.has_remote());
+            store.add_in(true, "custom remote", "tester").unwrap();
+        }
+        assert!(git::ref_exists(&server, "refs/heads/tod").unwrap());
+
+        // a fresh clone naming the same remote: the tod branch is
+        // adopted through it, and the task is pulled through it
+        let dir_b = tempfile::tempdir().unwrap();
+        let out = Command::new("git")
+            .args([
+                "clone",
+                "-o",
+                "todserver",
+                server.to_string_lossy().as_ref(),
+                dir_b.path().to_string_lossy().as_ref(),
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git clone failed");
+        std::fs::write(dir_b.path().join(crate::config::CONFIG_FILE), config).unwrap();
+        let store_b = Store::new(dir_b.path());
+        assert_eq!(store_b.load_backlog().unwrap().len(), 1);
+        assert!(store_b.has_remote());
+    }
+
+    #[test]
+    fn a_broken_project_config_blocks_the_commands() {
+        let (dir, _store) = git_repo();
+        std::fs::write(
+            dir.path().join(crate::config::CONFIG_FILE),
+            "not [ valid toml",
+        )
+        .unwrap();
+        let store = Store::new(dir.path());
+        let error = store.load_backlog().unwrap_err().to_string();
+        assert!(
+            error.contains(crate::config::CONFIG_FILE),
+            "points at the config: {error}"
+        );
     }
 }

@@ -155,7 +155,11 @@ pub fn diff(root: &Path, base: &str, branch: &str) -> Result<BranchDiff> {
     } else {
         full
     };
-    Ok(BranchDiff { stat, diff, truncated })
+    Ok(BranchDiff {
+        stat,
+        diff,
+        truncated,
+    })
 }
 
 /// Relay the mirror's refs to the repository's origin: everything a
@@ -207,7 +211,11 @@ mod tests {
     /// initialized and one backlog task.
     fn git_repo_with_tod() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        let out = Command::new("git").arg("init").current_dir(dir.path()).output().unwrap();
+        let out = Command::new("git")
+            .arg("init")
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
         assert!(out.status.success(), "git init failed");
         let store = Store::new(dir.path());
         store.init().unwrap();
@@ -254,10 +262,17 @@ mod tests {
 
         let root = prepare(&repo, workdir.path()).unwrap();
         assert!(root.ends_with("7-proj.git"));
-        assert_eq!(git(Some(&root), &["rev-parse", "--is-bare-repository"]).unwrap(), "true");
+        assert_eq!(
+            git(Some(&root), &["rev-parse", "--is-bare-repository"]).unwrap(),
+            "true"
+        );
 
         // every ref travelled into the mirror, tod included
-        let refs = git(Some(&root), &["for-each-ref", "--format=%(refname)", "refs/heads/*"]).unwrap();
+        let refs = git(
+            Some(&root),
+            &["for-each-ref", "--format=%(refname)", "refs/heads/*"],
+        )
+        .unwrap();
         assert!(refs.contains("refs/heads/tod"));
 
         // the mirror carries its own tod worktree and reads the tasks
@@ -284,7 +299,15 @@ mod tests {
 
         // a first user seeds the origin: code plus the tod storage
         let seed = tempfile::tempdir().unwrap();
-        git(None, &["clone", origin.to_string_lossy().as_ref(), seed.path().to_string_lossy().as_ref()]).unwrap();
+        git(
+            None,
+            &[
+                "clone",
+                origin.to_string_lossy().as_ref(),
+                seed.path().to_string_lossy().as_ref(),
+            ],
+        )
+        .unwrap();
         git(Some(seed.path()), &["config", "user.email", "t@t"]).unwrap();
         git(Some(seed.path()), &["config", "user.name", "t"]).unwrap();
         std::fs::write(seed.path().join("app.txt"), "code").unwrap();
@@ -305,7 +328,15 @@ mod tests {
 
         // a client pushes a feature branch to the server's mirror
         let client = tempfile::tempdir().unwrap();
-        git(None, &["clone", mirror.to_string_lossy().as_ref(), client.path().to_string_lossy().as_ref()]).unwrap();
+        git(
+            None,
+            &[
+                "clone",
+                mirror.to_string_lossy().as_ref(),
+                client.path().to_string_lossy().as_ref(),
+            ],
+        )
+        .unwrap();
         git(Some(client.path()), &["config", "user.email", "t@t"]).unwrap();
         git(Some(client.path()), &["config", "user.name", "t"]).unwrap();
         std::fs::write(client.path().join("feature.txt"), "work").unwrap();

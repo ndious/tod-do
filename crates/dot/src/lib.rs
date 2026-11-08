@@ -16,11 +16,12 @@
 //! `spec.md` (the detailed prompt: analysis of the existing code, research, reflections, work to realize — authored, never generated) and optionally
 //! `scenario.feature` (its Gherkin acceptance criteria).
 
-pub mod spec;
+pub mod config;
 pub mod git;
 pub mod plan;
 pub mod scenario;
 pub mod schema;
+pub mod spec;
 pub mod store;
 pub mod task;
 pub mod types;
