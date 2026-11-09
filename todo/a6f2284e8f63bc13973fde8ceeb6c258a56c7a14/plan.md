@@ -1,0 +1,1 @@
+- [ ] crate dot: module log — log.md append date+auteur, lecture recent d'abord + tests
