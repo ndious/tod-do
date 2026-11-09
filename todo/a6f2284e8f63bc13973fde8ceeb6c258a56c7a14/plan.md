@@ -1,1 +1,2 @@
 - [ ] crate dot: module log — log.md append date+auteur, lecture recent d'abord + tests
+- [ ] CLI: tod log <id> affiche, tod log <id> "note" append + commit + tests
