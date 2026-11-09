@@ -1,5 +1,5 @@
 - [x] crate dot: module log — log.md append date+auteur, lecture recent d'abord + tests
 - [x] CLI: tod log <id> affiche, tod log <id> "note" append + commit + tests
-- [ ] brief: les dernieres entrees en tete (10 par defaut) + tests
+- [x] brief: les dernieres entrees en tete (10 par defaut) + tests
 - [ ] SKILL.md: quand ecrire une entree + READMEs racine, dot, cli
 - [ ] dogfood: entrees reelles au fil de la tache, reprise par le brief, committer
