@@ -2,4 +2,4 @@
 - [x] CLI: tod log <id> affiche, tod log <id> "note" append + commit + tests
 - [x] brief: les dernieres entrees en tete (10 par defaut) + tests
 - [x] SKILL.md: quand ecrire une entree + READMEs racine, dot, cli
-- [ ] dogfood: entrees reelles au fil de la tache, reprise par le brief, committer
+- [x] dogfood: entrees reelles au fil de la tache, reprise par le brief, committer
