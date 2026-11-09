@@ -101,6 +101,33 @@ tod skill --remove --agent claude  # remove only the Claude Code one
 Commit the skill folder so every checkout (and every agent working
 on the repo) picks it up.
 
+## Agent hooks
+
+`tod hooks` installs the **deterministic** counterpart of the
+skill — what the agent cannot forget to do — in its own hook
+config (same agent list as `tod skill`):
+
+```bash
+tod hooks --agent claude   # SessionStart + Stop in .claude/settings.json
+tod hooks --agent vibe     # post_agent in .vibe/hooks.toml
+tod hooks --remove --agent claude   # strips only tod's entries
+```
+
+- **Context injection** (Claude Code `SessionStart`): at session
+  start and after every compaction, `tod hooks context` injects the
+  state of the current branch — active tasks, progress, the next
+  step of each plan.
+- **Step reminder** (Claude Code `Stop`, Vibe `post_agent`): when a
+  work branch holds unchecked plan steps at the end of a turn,
+  Claude Code blocks the stop (honoring `stop_hook_active`, so one
+  reminder per stop) and Vibe injects one relance (capped at 3 per
+  turn). Sessions on `main` are never nagged.
+- Cursor and the generic agent have no known hook format: the
+  skill remains their vehicle.
+
+Commit the hook files with the skill, so every session of the
+repository runs them.
+
 ## Project management server
 
 `tod-server` manages **several repositories** at once. It is a
@@ -318,6 +345,7 @@ cargo install --path crates/cli
 ```bash
 tod init                    # create the tod branch storage (+ skill)
 tod skill / skill --remove  # install / remove the agent skill
+tod hooks [--agent <a>]     # install / remove the agent hooks (--remove)
 tod add "Small fix"        # a plain todo
 tod plan "Complex feature" # a task + plan + spec scaffold
 tod sub 919fe "Next step"  # add a micro todo to a plan

@@ -4,6 +4,7 @@ use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
 use clap_complete::CompleteEnv;
 
 mod commands;
+mod hooks;
 mod skill;
 
 /// The ids of every task (backlog + contexts), for the shell
@@ -179,6 +180,20 @@ enum Commands {
     /// Run the validation tests of the project
     /// ([verify] command of the .tod.toml configuration)
     Verify,
+    /// Install the agent hooks (context injection, step reminder),
+    /// or run the hook command the agent invokes (context | reminder)
+    Hooks {
+        /// Hook command: context | reminder (install otherwise)
+        #[arg(conflicts_with_all = ["agent", "remove"])]
+        command: Option<String>,
+        /// Install the hooks for this agent, without asking
+        /// (claude | cursor | vibe | generic)
+        #[arg(long, value_name = "AGENT")]
+        agent: Option<String>,
+        /// Remove tod's hooks instead of installing them
+        #[arg(short, long)]
+        remove: bool,
+    },
     /// Cancel a task (it moves to the canceled state)
     Rm {
         /// Full or partial task identifier
@@ -269,6 +284,11 @@ fn main() -> Result<()> {
         Commands::Test { identifier } => commands::test(&identifier),
         Commands::State { identifier, state } => commands::state(&identifier, &state),
         Commands::Verify => commands::verify(),
+        Commands::Hooks {
+            command,
+            agent,
+            remove,
+        } => commands::hooks(command.as_deref(), agent.as_deref(), remove),
         Commands::Rm { identifier } => commands::rm(&identifier),
         Commands::Mv {
             backlog,

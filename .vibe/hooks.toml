@@ -1,0 +1,4 @@
+[[hooks]]
+name = "tod-check"
+type = "post_agent"
+command = "tod hooks reminder"

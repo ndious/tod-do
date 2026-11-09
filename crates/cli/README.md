@@ -76,12 +76,25 @@ scenarios, one micro-todo at a time, `tod check`, never regenerate
 the spec). Per-agent folders: Claude Code, Cursor, Mistral Vibe,
 standard `.agents`.
 
+## The agent hooks
+
+`tod hooks` installs the deterministic layer besides the skill:
+the context of the branch injected at session start (and after
+each compaction), and the reminder to check the plan steps at the
+end of a turn. Claude Code (`.claude/settings.json`: SessionStart
+blocks nothing and feeds stdout to the agent, Stop exits 2 to
+block, `stop_hook_active` guards the loop), Vibe (`.vibe/hooks.toml`:
+`post_agent` with a structured JSON deny, capped at 3 per turn).
+Cursor and the generic agent have no hook format: clean refusal.
+
 ## Layout
 
 - `main.rs` — the clap commands, dynamic shell completion.
 - `commands.rs` — every command, the editor helper, and the
   workflow tests (`start_in`, `test_in`, `finish_in`).
 - `skill.rs` — the installable SKILL.md content.
+- `hooks.rs` — the agent hooks: `context` (the snapshot), `reminder`
+  (Stop / post_agent protocols), the installers and their tests.
 
 Build: `cargo build -p cli` (or `cargo install --path crates/cli`).
 Tests: `cargo test -p cli`.

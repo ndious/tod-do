@@ -9,6 +9,8 @@ use dot::spec;
 use dot::store::Store;
 use dot::task::Task;
 
+use crate::hooks as hooks_mod;
+
 pub fn init(skill: bool, no_skill: bool, agent: Option<String>) -> Result<()> {
     let store = Store::discover()?;
     store.init()?;
@@ -90,6 +92,38 @@ fn verify_in(store: &Store) -> Result<()> {
         println!("Failed: '{command}'");
         std::process::exit(status.code().unwrap_or(1));
     }
+}
+
+/// Install (or remove) the agent hooks — the deterministic layer
+/// besides the skill: the context of the branch injected at session
+/// start, the reminder to check the plan steps at the stop. With a
+/// `command` ("context" | "reminder"), run the hook the agent's
+/// config invokes.
+pub fn hooks(command: Option<&str>, agent: Option<&str>, remove: bool) -> Result<()> {
+    match command {
+        None => {
+            let store = Store::discover()?;
+            let agent = match agent {
+                Some(flag) => parse_agent(flag)?,
+                None => choose_agent_interactive()?,
+            };
+            if remove {
+                if hooks_mod::remove(&store, agent)? {
+                    println!("Removed the {} hooks", agent.label());
+                } else {
+                    println!("No tod hooks installed for {}", agent.label());
+                }
+            } else {
+                let path = hooks_mod::install(&store, agent)?;
+                println!("Installed the {} hooks: {}", agent.label(), path.display());
+                println!("Commit them so every session in this repository runs them.");
+            }
+        }
+        Some("context") => hooks_mod::context_command()?,
+        Some("reminder") => hooks_mod::reminder_command()?,
+        Some(other) => bail!("unknown hook command '{other}' (context | reminder)"),
+    }
+    Ok(())
 }
 
 fn parse_agent(flag: &str) -> Result<crate::skill::Agent> {

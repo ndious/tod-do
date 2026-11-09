@@ -140,6 +140,22 @@ branch, tags), `plan.md` (the checklist you execute), `spec.md`
 interact with tod **only through the CLI**; the spec and the
 scenarios are written content: fill them, never regenerate them.
 
+## Hooks (when installed)
+
+`tod hooks` installs the deterministic counterpart of this skill in
+your agent's own hook config (Claude Code: `.claude/settings.json`,
+Vibe: `.vibe/hooks.toml`):
+
+- **Context injection** — at session start, and again after each
+  compaction, the state of the current branch arrives by itself:
+  the active tasks and the next step of each plan. Read it before
+  anything else; spare your context the `tod status` round trip.
+- **Step reminder** — at the end of a turn, when a task of the
+  branch still holds unchecked plan steps, you are reminded:
+  check the steps you completed (`tod check <id> <n>`) or continue
+  the plan. Claude Code blocks the stop until you do; Vibe nudges
+  the turn. Sessions on `main` are never blocked.
+
 ## Rules
 
 - Never mark a step or task done unless you finished it.
