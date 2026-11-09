@@ -1,5 +1,5 @@
 Description: tod log <id>: journal de handoff par tache — entrees datees affichees en tete du brief, pour survivre a la compaction et changer de session
 Author: Nicolas D.
 Created: 2026-11-08 23:05:14 +0000
-Updated: 2026-11-08 23:05:14 +0000
-Branch: main
+Updated: 2026-11-09 21:35:49 +0000
+Branch: t/a6f2284-tod-log-id-journal-de-handoff
