@@ -18,6 +18,7 @@
 
 pub mod config;
 pub mod git;
+pub mod log;
 pub mod plan;
 pub mod scenario;
 pub mod schema;

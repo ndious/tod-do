@@ -254,11 +254,64 @@ pub fn check(identifier: &str, number: usize) -> Result<()> {
     Ok(())
 }
 
-/// Print the spec of a task — its detailed prompt — scaffolding it
+/// Print the handoff journal of a task, or append a dated entry:
+/// every command of the tod workflow reads the journal through
+/// the brief — this is where the traversal state lives.
+pub fn log(identifier: &str, note: Option<&str>) -> Result<()> {
+    let store = Store::discover()?;
+    log_in(&store, identifier, note)
+}
+
+fn log_in(store: &Store, identifier: &str, note: Option<&str>) -> Result<()> {
+    store.ensure_init()?;
+    let (_, task) = store.find_task(identifier)?;
+    let dir = store.locate(&task.uid)?.1;
+
+    match note {
+        Some(text) => {
+            let author = git::user_name();
+            let entry = dot::log::append(&dir, &author, text)?;
+            store.commit(&format!("tod: log {}", &task.uid[..7]))?;
+            println!(
+                "Logged to #{}: {} - {}",
+                &task.uid[..5],
+                entry.timestamp,
+                entry.author
+            );
+        }
+        None => {
+            let journal = dot::log::Journal::read(&dir)?;
+            if journal.is_empty() {
+                println!(
+                    "No journal entry for #{} — add one: tod log {} \"<note>\"",
+                    &task.uid[..5],
+                    &task.uid[..7]
+                );
+            } else {
+                for entry in journal.recent() {
+                    println!("{entry}\n");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Print the spec of a task — scaffolding it
 /// when missing. The spec is authored (edited with `tod spec -e`),
 /// never generated: this is what the agent reads first.
 pub fn brief(identifier: &str) -> Result<()> {
     let store = Store::discover()?;
+    let text = brief_in(&store, identifier)?;
+    println!("{text}");
+    Ok(())
+}
+
+/// Render the brief of a task: the title, the journal of the work
+/// in progress (most recent first, capped), then the authored spec —
+/// the resume of a session sees where the work stands before the
+/// prompt of the past.
+fn brief_in(store: &Store, identifier: &str) -> Result<String> {
     store.ensure_init()?;
     let (_, task) = store.find_task(identifier)?;
     let dir = store.locate(&task.uid)?.1;
@@ -269,8 +322,35 @@ pub fn brief(identifier: &str) -> Result<()> {
             .with_context(|| format!("cannot write {}", path.display()))?;
         store.commit(&format!("tod: spec {}", &task.uid[..7]))?;
     }
-    println!("{}", fs::read_to_string(&path)?);
-    Ok(())
+
+    let mut out = format!("# {}\n", task.description);
+
+    // the journal: the 10 latest entries, most recent first
+    let journal = dot::log::Journal::read(&dir)?;
+    if !journal.is_empty() {
+        let total = journal.entries.len();
+        out.push_str(&format!("\n## Journal ({total} entries)\n\n"));
+        for entry in journal.recent().into_iter().take(10) {
+            out.push_str(&format!("{entry}\n\n"));
+        }
+    }
+
+    out.push('\n');
+    // the spec: its scaffolded title line is replaced by the live
+    // description above, since description evolves in task.tod —
+    // any other first line is kept
+    let spec = fs::read_to_string(&path)?;
+    let mut lines = spec.lines();
+    match lines.next() {
+        Some(first) if first.starts_with("# ") => {}
+        Some(first) => out.push_str(first),
+        None => {}
+    }
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// Print the Gherkin scenarios of a task — scaffolded in French
@@ -881,6 +961,70 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "[verify]\ncommand = \"x\"\n"
         );
+    }
+
+    #[test]
+    fn log_appends_dated_entries_and_reads_the_newest_first() {
+        let (_dir, store) = git_repo();
+        let task = store.add_in(true, "Fix the login bug", "tester").unwrap();
+
+        // reading an empty journal explains itself instead of pretending
+        log_in(&store, &task.uid[..7], None).unwrap();
+
+        log_in(&store, &task.uid[..7], Some("first entry")).unwrap();
+        log_in(
+            &store,
+            &task.uid[..7],
+            Some("blocked: the cache does not invalidate"),
+        )
+        .unwrap();
+        let dir = store.locate(&task.uid).unwrap().1;
+        let journal = dot::log::Journal::read(&dir).unwrap();
+        assert_eq!(journal.entries.len(), 2);
+        // most recent first when read
+        assert_eq!(
+            journal.recent()[0].text,
+            "blocked: the cache does not invalidate"
+        );
+
+        // an empty entry is refused, and a bad identifier too
+        assert!(log_in(&store, &task.uid[..7], Some("  ")).is_err());
+        assert!(log_in(&store, "zzzzz", Some("note")).is_err());
+        assert!(store.find_task("zzzzz").is_err());
+        // the refusals left the journal untouched
+        assert_eq!(journal.entries.len(), 2);
+    }
+
+    #[test]
+    fn brief_shows_the_journal_before_the_authored_spec() {
+        let (_dir, store) = git_repo();
+        let task = store.add_in(true, "Fix the login bug", "tester").unwrap();
+        log_in(
+            &store,
+            &task.uid[..7],
+            Some("finished the module, tests green"),
+        )
+        .unwrap();
+
+        let text = brief_in(&store, &task.uid[..7]).unwrap();
+        // the title comes from the task data, once
+        assert!(text.starts_with("# Fix the login bug\n"), "{text}");
+        assert_eq!(text.matches("# Fix the login bug").count(), 1, "{text}");
+        // the journal before the spec sections
+        let journal_at = text.find("## Journal (1 entries)").unwrap();
+        let entry_at = text.find("finished the module, tests green").unwrap();
+        let spec_at = text.find("## Analyse de l'existant").unwrap();
+        assert!(journal_at < entry_at && entry_at < spec_at, "{text}");
+    }
+
+    #[test]
+    fn brief_without_a_journal_is_only_the_task_and_the_spec() {
+        let (_dir, store) = git_repo();
+        let task = store.add_in(true, "Fix the login bug", "tester").unwrap();
+        let text = brief_in(&store, &task.uid[..7]).unwrap();
+        assert!(text.starts_with("# Fix the login bug\n"), "{text}");
+        assert!(!text.contains("## Journal"), "{text}");
+        assert!(text.contains("## Analyse de l'existant"), "{text}");
     }
 }
 

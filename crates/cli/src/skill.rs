@@ -75,6 +75,8 @@ in your working copy), one directory per task holding its files.
 - Each task has a **sha1 uid**; abbreviate it git-style (`919fe`).
 - A task in a working branch carries its **branch** name.
 - A complex task has a **plan**: `plan.md`, a markdown checklist.
+- A complex task has a **journal**: `log.md`, the dated handoff
+  entries (what is done, what blocks, what comes next).
 - The **spec** (`spec.md`) is the detailed prompt of the task:
   analysis of the existing code, research, reflections, and the
   work to realize. It is **authored** (by the human and you), never
@@ -94,7 +96,9 @@ in your working copy), one directory per task holding its files.
    them into the spec (`tod spec <id> -e`): research, reflections
    and analysis of the existing code belong there.
 4. **Mark the step done**: `tod check <id> <number>` (1-based).
-   Only check steps you actually completed.
+   Only check steps you actually completed. When a work unit ends
+   — or a blocker shows — leave a journal entry:
+   `tod log <id> "what is done, what blocks, what comes next"`.
 5. **When a step reveals new work**, propose it to the human; the
    human adds it with `tod sub <id> "text"`.
 6. **When the whole task is done**, ask the human to run
@@ -107,6 +111,8 @@ in your working copy), one directory per task holding its files.
 tod status              # every state, with progress
 tod ls / ls -b / ls -A  # todos left to do (-a: the done ones too)
 tod brief <id>          # the spec of a task — its detailed prompt
+tod log <id> "note"     # append a dated journal entry (you and the human)
+tod log <id>            # the whole journal, most recent first
 tod spec <id> -e        # edit the spec in $TOD_EDITOR / $EDITOR
 tod scenario <id> [-e]  # the Gherkin scenarios (edit them too)
 tod check <id> <n>      # toggle step n of the plan
@@ -135,10 +141,12 @@ canceled/<sha1>/
 ```
 
 Each task directory holds `task.tod` (description, author, dates,
-branch, tags), `plan.md` (the checklist you execute), `spec.md`
-(the detailed prompt) and optionally `scenario.feature`. Agents
-interact with tod **only through the CLI**; the spec and the
+branch, tags), `plan.md` (the checklist you execute), `log.md`
+(the dated handoff entries — the brief shows the latest ones first),
+`spec.md` (the detailed prompt) and optionally `scenario.feature`.
+Agents interact with tod **only through the CLI**; the spec and the
 scenarios are written content: fill them, never regenerate them.
+The journal is append-only: never rewrite its entries.
 
 ## Hooks (when installed)
 

@@ -117,6 +117,14 @@ enum Commands {
         #[arg(short, long)]
         edit: bool,
     },
+    /// Print the handoff journal of a task, or add a dated entry
+    Log {
+        /// Full or partial task identifier
+        #[arg(add = ArgValueCandidates::new(task_id_candidates))]
+        identifier: String,
+        /// The entry to append (omit to read the whole journal)
+        note: Option<String>,
+    },
     /// Print the Gherkin scenarios of a task (scaffold it first when missing)
     Scenario {
         /// Full or partial task identifier
@@ -270,6 +278,7 @@ fn main() -> Result<()> {
         Commands::Check { identifier, number } => commands::check(&identifier, number),
         Commands::Brief { identifier } => commands::brief(&identifier),
         Commands::Spec { identifier, edit } => commands::spec(&identifier, edit),
+        Commands::Log { identifier, note } => commands::log(&identifier, note.as_deref()),
         Commands::Scenario { identifier, edit } => commands::scenario(&identifier, edit),
         Commands::Status => commands::status(),
         Commands::Ls {

@@ -17,6 +17,7 @@ its planning tools.
 | `config` | `.tod.toml`: the per-project settings (sync remote, verification command) |
 | `git` | the git helpers: worktrees, branches, rebase, push, retrying background push |
 | `plan` | `plan.md`: the micro-todo checklist of a task |
+| `log` | `log.md`: the dated handoff journal of a task (append-only, most recent first when read) |
 | `spec` | `spec.md`: the authored detailed prompt (scaffold + read) |
 | `scenario` | `scenario.feature`: the Gherkin acceptance criteria |
 | `brief` | — removed: specs are authored, never generated |
@@ -39,8 +40,9 @@ canceled/<sha1>/
 
 The **state** of a task is its directory (`Store::STATES`); the
 **working branch** is a `Branch:` field of `task.tod`. Each task
-directory also holds `plan.md` (a markdown checklist), `spec.md`
-(the detailed prompt) and optionally `scenario.feature`.
+directory also holds `plan.md` (a markdown checklist), `log.md`
+(the dated handoff entries), `spec.md` (the detailed prompt) and
+optionally `scenario.feature`.
 
 ## Synchronization
 

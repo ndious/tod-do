@@ -53,7 +53,8 @@ tod spec 919fe -e              # write the detailed prompt
 tod scenario 919fe -e         # write the Gherkin criteria
 tod sub 919fe "Next step"      # add a micro todo
 tod check 919fe 1              # toggle it
-tod brief 919fe                # read the spec
+tod log 919fe "done: session"  # dated journal entry (the handoff)
+tod brief 919fe                # title + latest journal + the spec
 ```
 
 The spec (`spec.md`) is the **detailed prompt** — analysis of the

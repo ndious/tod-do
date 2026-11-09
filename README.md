@@ -17,7 +17,8 @@ management server** (login, SQLite, Yew web console, Docker image).
   (`t/<uid7>-<slug>`), created from `main` by `tod start`.
 - A **backlog** holds the tasks not started yet.
 - Complex tasks get a **plan** (`plan.md`, a clickable micro todo
-  list), a **spec** (`spec.md`, the authored detailed prompt) and
+  list), a **journal** (`log.md`, the dated handoff entries), a
+  **spec** (`spec.md`, the authored detailed prompt) and
   optional **Gherkin scenarios** (`scenario.feature`, the
   acceptance criteria).
 - Tasks carry free-form **tags** (`#rust`, `#cli`).
@@ -30,7 +31,8 @@ tod spec 919fe -e                    # write the detailed prompt
 tod scenario 919fe -e               # write the acceptance criteria
 tod sub 919fe "Investigate expiry"   # add a micro todo to the plan
 tod check 919fe 1                    # toggle step 1
-tod brief 919fe                      # read the spec
+tod log 919fe "done: X, blocked: Y"  # dated journal entry (handoff)
+tod brief 919fe                      # read the spec — latest journal first
 tod status                           # every state, with progress
 ```
 
@@ -265,9 +267,12 @@ tod branch
 ```
 
 Each task directory holds `task.tod` (description, author, dates,
-branch, tags), `plan.md` (its micro-todo checklist), `spec.md` and
-optionally `scenario.feature` — the acceptance criteria in French
-Gherkin. The **spec is the detailed prompt of the task**: analysis
+branch, tags), `plan.md` (its micro-todo checklist), `log.md` (the
+dated handoff entries — append-only, written by the human and the
+agent with `tod log <id> "note"`, shown by the brief most-recent
+first), `spec.md` and optionally `scenario.feature` — the
+acceptance criteria in French Gherkin. The **spec is the detailed
+prompt of the task**: analysis
 of the existing code, research, reflections, and the work to
 realize. It is **authored** — by the human and the agent — never
 generated, and it carries no tod metadata nor the plan (those live
@@ -354,6 +359,8 @@ tod brief 919fe            # the spec of a task — its detailed prompt
 tod spec 919fe -e          # edit the prompt in $TOD_EDITOR / $EDITOR / vi
 tod scenario 919fe        # the Gherkin scenarios (scaffolded in French when missing)
 tod scenario 919fe -e      # ... or edit them in your editor
+tod log 919fe "done: X, next: Y"  # a dated journal entry (handoff)
+tod log 919fe              # the whole journal, most recent first
 tod verify                 # run the validation tests of the project (.tod.toml)
 tod status                 # project overview with progress
 tod ls / ls -b             # todos left to do (-a: also the done ones)
