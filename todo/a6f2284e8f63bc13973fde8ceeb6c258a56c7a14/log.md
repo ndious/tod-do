@@ -3,3 +3,6 @@ etape 2 faite: sous-commande CLI tod log (affichage recent d'abord, append + com
 
 ## 2026-11-09T21:41:21Z - Nicolas D.
 etape 3 faite: brief_assemble (titre depuis task.tod, journal 10 dernieres entrees en tete, spec sans son titre scaffold), 2 tests. verif en direct ci-apres
+
+## 2026-11-09T21:45:01Z - Nicolas D.
+etape 4 faite: SKILL.md documente le journal (quand ecrire: fin d'unite de travail ou blocage, append-only), READMEs racine/dot/cli a jour, skill du depot reinstalle
