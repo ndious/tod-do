@@ -2,3 +2,4 @@
 - [ ] lectures: ls, status, ctx — surface curee des taches (progress, next_step) + tests
 - [ ] lectures documentaires: brief {description, journal, spec}, log, scenario — structures + tests
 - [ ] ecritures: add, plan, sub, check, log, tag, state, x, rfr, test, rm, mv, start, finish, resolve — confirmations minimales + tests
+- [ ] admin + verify: init, skill, hooks, verify — objets minimal aux; exemptions documentees (completions, hooks context/reminder) + tests
