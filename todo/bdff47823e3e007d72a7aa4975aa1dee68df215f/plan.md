@@ -3,3 +3,4 @@
 - [ ] lectures documentaires: brief {description, journal, spec}, log, scenario — structures + tests
 - [ ] ecritures: add, plan, sub, check, log, tag, state, x, rfr, test, rm, mv, start, finish, resolve — confirmations minimales + tests
 - [ ] admin + verify: init, skill, hooks, verify — objets minimal aux; exemptions documentees (completions, hooks context/reminder) + tests
+- [ ] docs + dogfood: READMEs, SKILL.md (le contrat --json), verif par jq et codes de sortie en vrai shell + committer
