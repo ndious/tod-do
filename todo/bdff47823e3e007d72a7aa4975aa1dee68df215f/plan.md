@@ -1,2 +1,3 @@
 - [ ] socle: drapeau --json global, enveloppe schemaVersion, dot::Invalid sur les sites de validation, main: exit 0/1/2 + erreurs JSON sur stderr + tests
 - [ ] lectures: ls, status, ctx — surface curee des taches (progress, next_step) + tests
+- [ ] lectures documentaires: brief {description, journal, spec}, log, scenario — structures + tests
